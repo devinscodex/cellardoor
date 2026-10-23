@@ -45,3 +45,26 @@ steps, whether Entra `sub` is stable per app.
 Single-tenant Entra login (authorization code with PKCE, state, nonce, full token
 validation) plus one invited guest, with the fixtures passing in both the Python
 server and a TypeScript client. Roles, limits, admin page and packaging follow.
+
+## Engineering rules
+
+- Use only open, widely reviewed primitives and libraries: `jose` (TypeScript),
+  PyJWT with `cryptography` (Python), argon2id via a maintained library, the
+  platform CSPRNG and `hmac.compare_digest` for secrets. No custom cryptography,
+  no home-made token formats.
+- Fail closed: any validation error, missing claim, unknown key id or unexpected
+  algorithm rejects the request.
+- Secrets are never logged, including raw tokens, codes and passwords. Secrets and
+  keys come from the environment or files with restricted permissions, never from
+  the repository.
+- Cookies are HttpOnly, Secure and SameSite. State-changing requests require CSRF
+  protection and an Origin check.
+- Parameterized queries only. Strict input validation and length limits at every
+  boundary. Constant-time comparison for every secret.
+- Smallest dependency set, pinned with hashes; each new dependency is justified in
+  writing. Python standard library first, no framework.
+- Every fixture case in the conformance suite has a test that must fail when the
+  check it covers is removed.
+- Tests run in CI; static analysis (bandit, ruff, tsc strict, eslint security
+  rules) and a dependency audit run on every change.
+- A SECURITY.md describes how to report a vulnerability.
