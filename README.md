@@ -16,9 +16,12 @@ Status: design phase. Nothing is built yet.
   and an expiry date.
 - **Roles and per-user limits** kept in one store that apps read.
 - **Audit log** of sign-ins, invites, role changes and disables.
+- **Admin.** An admin API and CLI first, then one small server-rendered admin page
+  (people, invites, guests, roles, per-app limits, audit log). Apps may use it or
+  call the API from their own pages. No end-user UI.
 - **Open and portable.** Standard protocols only (OAuth 2.0 Security BCP, OpenID
   Connect, PKCE). Python standard library plus a vetted JWT library. No UI of its
-  own: apps draw their own admin pages.
+  own for end users.
 
 ## Targets
 
@@ -27,7 +30,7 @@ OIDC clients. First consumers: Dialos and the Bethel church website.
 
 ## Not goals
 
-A hosted identity service, a full identity server, or custom cryptography.
+A hosted identity service, a full identity server, custom cryptography, or PHP.
 
 ## License
 
