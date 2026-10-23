@@ -1,0 +1,189 @@
+CELLARDOOR  -  CLI / TUI MOCKUPS
+Plain 7-bit ASCII, 72 columns max, no color required, no dependencies.
+All names, addresses and ids below are made up (example.com).
+
+Door states used everywhere:
+  [ ] open    signed in
+  [/] ajar    invited, not yet used
+  [#] closed  disabled or locked
+
+======================================================================
+1. LOGO (large, for README and install splash)
+======================================================================
+
+         ___.-----.___
+      .-'   |  |  |   '-.
+     /      |  |  |      \
+    |=======|==|==|=======|
+    |  (o)  |  |  |  (o)  |
+    |       |  |  |       |
+    |       |  |  |   _   |
+    |       |  |  |  (_)  |
+    |=======|==|==|=======|
+    |  (o)  |  |  |  (o)  |
+    |       |  |  |       |
+   =========================
+                                 cellardoor
+                                 open sign-in for small projects
+
+----------------------------------------------------------------------
+1b. LOGO (small, one line of context, for --version and prompts)
+----------------------------------------------------------------------
+
+   .---.
+   | o |  cellardoor 0.0.1
+   '---'
+
+======================================================================
+2. INSTALL
+======================================================================
+
+   .---.
+   | o |  cellardoor 0.0.1 - install
+   '---'
+
+   This will create:
+     /etc/cellardoor/config.toml         (mode 600)
+     /var/lib/cellardoor/cellardoor.db   (mode 600)
+     /etc/cellardoor/pepper              (mode 600, 32 random bytes)
+
+   Checking
+     [ok] python 3.11 or newer
+     [ok] sqlite 3.35 or newer
+     [ok] argon2 library present
+     [ok] PyJWT and cryptography present
+     [ok] target directories writable
+     [--] database exists          no, will create
+
+   Create these now?  [y/N] y
+
+     [ok] wrote config.toml
+     [ok] generated pepper (keep a copy off this machine)
+     [ok] created database, schema version 1
+     [ok] self-test: 14 of 14 checks passed
+
+   Next:  cellardoor config      then      cellardoor user add --admin
+
+======================================================================
+3. CONFIGURE (line-based wizard, every answer has a default)
+======================================================================
+
+   cellardoor config
+
+   1/5  Sign-in methods
+        [x] local accounts
+        [x] Microsoft Entra ID (OIDC)
+        [ ] trusted reverse proxy
+        toggle with the number, enter to continue:
+
+   2/5  Entra ID
+        tenant id            : 00000000-0000-0000-0000-000000000000
+        application id       : 11111111-1111-1111-1111-111111111111
+        client secret file   : /etc/cellardoor/entra.secret
+        accept other tenants : no
+        redirect url         : https://auth.example.com/callback
+
+   3/5  Guests
+        allow guest invites  : yes
+        default guest role   : guest
+        guest expiry (days)  : 30
+
+   4/5  Sessions
+        lifetime (hours)     : 8
+        idle timeout (min)   : 30
+
+   5/5  Break-glass admin
+        username             : breakglass
+        (works without Entra; password is set in the next step)
+
+   Review                                   write config?  [y/N]
+
+======================================================================
+4. USERS
+======================================================================
+
+   cellardoor user list
+
+   STATE  NAME       SOURCE   ROLE    LAST SIGN-IN        EXPIRES
+   [ ]    alice      entra    admin   2026-10-23 09:12    -
+   [ ]    bob        entra    user    2026-10-22 16:40    -
+   [/]    carol      invite   guest   never               2026-11-22
+   [ ]    dave       local    guest   2026-10-20 11:03    2026-11-19
+   [#]    erin       entra    user    2026-09-30 08:55    disabled
+   [ ]    breakglass local    admin   2026-08-01 12:00    -
+
+   6 people: 3 open, 1 ajar, 1 closed, 1 admin-only local
+   cellardoor user --help for add, disable, enable, role, reset, delete
+
+----------------------------------------------------------------------
+4b. INVITE A GUEST
+----------------------------------------------------------------------
+
+   cellardoor invite carol@example.org --role guest --days 30
+
+   Invite created
+     person    carol@example.org
+     role      guest
+     expires   2026-11-22
+     link      https://auth.example.com/invite/Zk3mQ9...   (shown once)
+
+   The link works once. Only its hash is stored.
+   Send it yourself; cellardoor does not send mail.
+
+----------------------------------------------------------------------
+4c. DISABLE (asks first, refuses to remove the last admin)
+----------------------------------------------------------------------
+
+   cellardoor user disable erin
+
+   erin (entra, user) will be signed out everywhere and locked out.
+   Continue?  [y/N] y
+     [ok] disabled, 2 sessions ended
+     [ok] audit entry written
+
+   cellardoor user disable breakglass
+
+     [no] refused: this is the last admin. Add another admin first.
+
+======================================================================
+5. AUDIT LOG
+======================================================================
+
+   cellardoor audit --last 6
+
+   TIME                 EVENT          WHO        DETAIL
+   2026-10-23 09:12:41  signin         alice      entra
+   2026-10-23 09:03:05  signin-fail    bob        bad password (3 of 5)
+   2026-10-22 16:40:12  signin         bob        entra
+   2026-10-22 16:02:50  invite         alice      carol@example.org 30d
+   2026-10-22 15:58:19  role-change    alice      dave user -> guest
+   2026-10-22 15:55:00  disable       alice      erin
+
+======================================================================
+6. ERRORS (short, say what to do, never print secrets)
+======================================================================
+
+   cellardoor: sign-in refused
+     the token came from a tenant that is not on the allowlist.
+     fix: add the tenant in config.toml under [entra] allowed_tenants,
+          or ask the user to sign in with the right account.
+
+   cellardoor: config not loaded
+     /etc/cellardoor/config.toml is readable by other users (mode 644).
+     fix: chmod 600 /etc/cellardoor/config.toml
+
+======================================================================
+7. HELP
+======================================================================
+
+   cellardoor <command> [options]
+
+   install      create config, database and pepper
+   config       change settings
+   user         list, add, disable, enable, role, reset, delete
+   invite       create a one-time invite link
+   audit        show the audit log
+   check        run self-tests and report problems
+   version      print version
+
+   Environment: NO_COLOR is respected. Output is plain text.

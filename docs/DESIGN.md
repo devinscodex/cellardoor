@@ -20,7 +20,7 @@
 
 ## Identity
 
-- Primary key is issuer plus subject. For Entra use `oid` plus `tid`. Never key on
+- Primary key is issuer plus subject. For Entra use `oid` plus `tid` (confirmed by Microsoft's guidance below). Never key on
   email or UPN.
 - Multi-tenant apps must allowlist `tid`.
 - Prefer app roles (`roles` claim) over group claims.
@@ -35,10 +35,31 @@ redemption, argon2id for new password hashes, OWASP ASVS L2, NIST SP 800-63B,
 audit log retention, dependency pinning, vulnerability disclosure path.
 Non-goals: SCIM, passkeys in v1.
 
-## Unverified (check against Microsoft docs and a real token before coding)
+## Entra facts (checked against Microsoft Learn, ID token claims reference, updated 2025-03-27, and access tokens page, updated 2025-05-14)
 
-Exact issuer string, group overage threshold (200 from memory), B2B guest portal
-steps, whether Entra `sub` is stable per app.
+- v2.0 issuer is `https://login.microsoftonline.com/{tenantid}/v2.0`. For
+  multi-tenant apps the discovery document is a template; validate `iss` against the
+  `tid` in the token and against an allowlist of tenants.
+- `oid` is the immutable user id inside a tenant and is the same across apps.
+  `oid` plus `tid` is the stable key for a user. `sub` is pairwise per app, so it is
+  stable for one app but differs between apps. A user in several tenants has a
+  different `oid` in each; treat guests as new users in the resource tenant.
+- `email` and `preferred_username` are mutable and not guaranteed correct. Never
+  use them for authorization or as the key.
+- Validate `aud` (this app's application id), `nonce`, `exp`, `nbf`, signature, and
+  the `ver` claim. Read keys from the v2.0 metadata for v2.0 tokens.
+- Signing keys rotate; refetch the key set at least every 24 hours and on an
+  unknown `kid`.
+- `roles` carries the app roles assigned to the user. Prefer it to group claims.
+- Personal Microsoft accounts use tenant id `9188040d-6c67-4c5b-b112-36a304b66dad`;
+  reject it unless personal accounts are intended.
+- `idp` differs from `iss` for guests; do not use it to correlate users.
+
+## Unverified (check before coding)
+
+Group overage threshold and the overage claim format (the page has a section; only
+the heading was read), B2B guest invitation steps in the portal, and licensing for
+external users.
 
 ## First milestone
 
@@ -68,3 +89,26 @@ server and a TypeScript client. Roles, limits, admin page and packaging follow.
 - Tests run in CI; static analysis (bandit, ruff, tsc strict, eslint security
   rules) and a dependency audit run on every change.
 - A SECURITY.md describes how to report a vulnerability.
+
+## Storage
+
+- One SQLite file per deployment (Python standard library `sqlite3`), plain
+  parameterized SQL, no ORM, WAL mode, file mode 600, kept outside any web root.
+  Each deployment has its own store; nothing is shared between apps.
+- Passwords: argon2id (unique salt per hash, stored in the hash string), after an
+  HMAC-SHA256 with a secret pepper held outside the database. A pepper version tag
+  is stored with each hash so the pepper can be rotated.
+- Session tokens, invite codes and reset links: 256 random bits from the platform
+  CSPRNG; only the SHA-256 hash is stored. No salt or slow hash is needed because
+  the token is unguessable.
+- Emails, names and the audit log must be readable, so they are protected by disk
+  encryption, file permissions and encrypted backups, not hashing.
+- Client secrets, signing keys and the pepper come from environment variables or
+  files with mode 600. Never from the database or the repository.
+- A pepper only helps when the attacker gets the database but not the server's
+  secrets. Full server compromise exposes both.
+
+## Test fixtures
+
+Fixtures are synthetic: tokens signed with throwaway test keys, made-up ids, and
+`example.com` addresses. Nothing recorded from a real tenant is committed.
