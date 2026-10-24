@@ -1,0 +1,11 @@
+stateDiagram-v2
+  [*] --> Invited: admin creates invite
+  Invited --> Active: redeemed once, sign in or set password
+  Invited --> Expired: link not used in time
+  Active --> Expiring: expiry date near
+  Expiring --> Active: admin extends
+  Expiring --> Expired: date passes
+  Active --> Disabled: admin disables
+  Disabled --> Active: admin enables
+  Expired --> [*]
+  Disabled --> [*]: admin deletes

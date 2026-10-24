@@ -1,0 +1,37 @@
+erDiagram
+  USER ||--o{ IDENTITY : has
+  USER ||--o{ SESSION : holds
+  USER ||--o{ SETTING : has
+  USER ||--o{ AUDIT : appears_in
+  INVITE }o--|| USER : creates
+  USER {
+    int id
+    string role
+    bool disabled
+    date expires
+  }
+  IDENTITY {
+    string provider
+    string key
+    string password_hash
+  }
+  SESSION {
+    string token_hash
+    int expires_at
+  }
+  INVITE {
+    string code_hash
+    string role
+    int expires_at
+    bool used
+  }
+  SETTING {
+    string app
+    string name
+    string value
+  }
+  AUDIT {
+    int time
+    string event
+    string detail
+  }

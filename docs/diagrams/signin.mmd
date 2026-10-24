@@ -1,0 +1,20 @@
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant A as App
+  participant C as CellarDoor
+  participant E as Entra ID
+  U->>A: open app
+  A->>C: no session, start sign-in
+  C->>C: make state, nonce, PKCE verifier
+  C->>E: authorize (code, challenge, state, nonce)
+  E->>U: sign in, consent
+  U->>C: redirect with code and state
+  C->>C: check state
+  C->>E: exchange code plus verifier
+  E-->>C: ID token
+  C->>C: verify signature, alg, aud, iss, tid allowlist, nonce, exp
+  C->>C: find identity by tid and oid, load role
+  C->>C: store session token hash
+  C-->>A: session cookie (HttpOnly, Secure, SameSite)
+  A-->>U: signed in

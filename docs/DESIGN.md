@@ -112,3 +112,10 @@ server and a TypeScript client. Roles, limits, admin page and packaging follow.
 
 Fixtures are synthetic: tokens signed with throwaway test keys, made-up ids, and
 `example.com` addresses. Nothing recorded from a real tenant is committed.
+
+## Diagrams
+
+Mermaid sources and rendered SVGs are in `docs/diagrams/`: `architecture`, `signin`
+(Entra authorization code with PKCE), `guest-lifecycle` and `data`. Regenerate with
+`npm install` then `node tools/render_diagrams.mjs`. Rendering uses Pele (MIT, no
+runtime dependencies), a development tool only.

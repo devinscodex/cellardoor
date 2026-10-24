@@ -1,0 +1,30 @@
+flowchart TB
+  subgraph Apps
+    DIA[Dialos webchat]
+    BET[Bethel site and planner]
+    OTH[Other apps]
+  end
+  subgraph Clients
+    PYC[Python client]
+    TSC[TypeScript client, jose]
+  end
+  subgraph CellarDoor
+    SRV[Reference server, Python]
+    ADM[Admin API, CLI, admin page]
+    DB[(SQLite, one file per deployment)]
+  end
+  subgraph Identity providers
+    ENT[Microsoft Entra ID, OIDC]
+    LOC[Local accounts, argon2id plus pepper]
+    PRX[Trusted reverse proxy]
+  end
+  DIA --> PYC
+  BET --> TSC
+  OTH --> TSC
+  PYC -- verify session --> SRV
+  TSC -- verify session --> SRV
+  SRV --> DB
+  ADM --> SRV
+  SRV -- auth code, PKCE --> ENT
+  SRV --> LOC
+  SRV --> PRX
