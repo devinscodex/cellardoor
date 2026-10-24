@@ -1,24 +1,32 @@
-"""Mutation check: disable each `if ...: _fail(code)` guard in verify.py in turn and
-confirm the fixture tests fail. A surviving mutant means a check has no test."""
+"""Mutation check: disable each `if ...: raise/_fail("code")` guard in turn and confirm
+the test suite fails. A surviving mutant means a check has no test."""
 import re
 import subprocess
 import sys
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
-src = (root / "cellardoor" / "verify.py").read_text()
-guards = list(re.finditer(r"^(\s+)if (.+):\n\s+_fail\(\"(\w+)\"\)\n", src, re.MULTILINE))
+FILES = ("verify.py", "store.py", "crypto.py")
+GUARD = re.compile(
+    r"^[ \t]+if ((?:[^\n]|\\\n)+?):\n[ \t]+(?:_fail|raise \w+)\(\"(\w+)\"\)", re.MULTILINE)
 survived = []
-for g in guards:
-    mutant = src[:g.start(2)] + "False" + src[g.end(2):]
-    (root / "cellardoor" / "verify.py").write_text(mutant)
-    try:
-        r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-x"], cwd=root,
-                           capture_output=True, text=True, check=False)
-    finally:
-        (root / "cellardoor" / "verify.py").write_text(src)
-    killed = r.returncode != 0
-    print(f"{'killed  ' if killed else 'SURVIVED'} {g.group(3):16} if {g.group(2)[:60]}")
-    if not killed:
-        survived.append(g.group(3))
+total = 0
+for name in FILES:
+    path = root / "cellardoor" / name
+    src = path.read_text()
+    for g in GUARD.finditer(src):
+        total += 1
+        mutant = src[:g.start(1)] + "False" + src[g.end(1):]
+        path.write_text(mutant)
+        try:
+            r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-x"], cwd=root,
+                               capture_output=True, text=True, check=False)
+        finally:
+            path.write_text(src)
+        killed = r.returncode != 0
+        cond = " ".join(g.group(1).split())[:56]
+        print(f"{'killed  ' if killed else 'SURVIVED'} {name:10} {g.group(2):16} if {cond}")
+        if not killed:
+            survived.append((name, g.group(2)))
+print(f"{total - len(survived)} of {total} guards killed")
 sys.exit(1 if survived else 0)
