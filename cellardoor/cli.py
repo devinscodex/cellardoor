@@ -1,4 +1,4 @@
-"""cellardoor command line: init, user, invite, audit, check.
+"""cellardoor command line: init, user, invite, audit, check, serve.
 
 Files live in one directory (CELLARDOOR_DIR or --dir): cellardoor.db and pepper, both
 mode 600. Passwords are read with getpass, never from arguments.
@@ -118,6 +118,22 @@ def cmd_audit(args, out):
         out(f"{stamp}  {r['event']:12} {r['actor']:14} {r['detail']}")
 
 
+def cmd_serve(args, out):
+    from . import server
+    db, pepper = paths(args.dir)
+    store.connect(db).close()
+    host, _, port = args.listen.rpartition(":")
+    app = server.App(db, load_pepper(pepper), args.origin.rstrip("/"),
+                     secure_cookies=not args.insecure_cookies)
+    httpd = server.serve(app, host or "127.0.0.1", int(port))
+    out(f"listening on {args.listen}, origin {app.origin}")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        out("stopped")
+    return 0
+
+
 def cmd_check(args, out):
     db, pepper = paths(args.dir)
     problems = 0
@@ -163,13 +179,19 @@ def build_parser():
     aud = sub.add_parser("audit")
     aud.add_argument("--last", type=int, default=20)
     sub.add_parser("check")
+    srv = sub.add_parser("serve")
+    srv.add_argument("--listen", default="127.0.0.1:8480")
+    srv.add_argument("--origin", required=True,
+                     help="public origin of this server, e.g. https://auth.example.com")
+    srv.add_argument("--insecure-cookies", action="store_true",
+                     help="omit the Secure cookie flag (local http testing only)")
     return p
 
 
 def main(argv=None, out=print):
     args = build_parser().parse_args(argv)
     handlers = {"init": cmd_init, "user": cmd_user, "invite": cmd_invite,
-                "audit": cmd_audit, "check": cmd_check}
+                "audit": cmd_audit, "check": cmd_check, "serve": cmd_serve}
     try:
         return handlers[args.cmd](args, out) or 0
     except (CliError, store.StoreError) as e:
