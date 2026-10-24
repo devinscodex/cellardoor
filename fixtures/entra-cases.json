@@ -1,0 +1,491 @@
+{
+ "config": {
+  "audience": "11111111-1111-1111-1111-111111111111",
+  "allowed_tenants": [
+   "22222222-2222-2222-2222-222222222222"
+  ],
+  "nonce": "nonce-for-tests",
+  "now": 1800000000
+ },
+ "cases": [
+  {
+   "name": "valid",
+   "expect": "ok",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   },
+   "identity": {
+    "key": "22222222-2222-2222-2222-222222222222:44444444-4444-4444-4444-444444444444",
+    "guest": false,
+    "roles": [
+     "reader"
+    ]
+   }
+  },
+  {
+   "name": "valid_guest",
+   "expect": "ok",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com",
+    "idp": "https://sts.example.net/guest/"
+   },
+   "identity": {
+    "key": "22222222-2222-2222-2222-222222222222:44444444-4444-4444-4444-444444444444",
+    "guest": true,
+    "roles": [
+     "reader"
+    ]
+   }
+  },
+  {
+   "name": "expired",
+   "expect": "expired",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799992800,
+    "nbf": 1799992800,
+    "exp": 1799996400,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   }
+  },
+  {
+   "name": "not_yet_valid",
+   "expect": "not_yet_valid",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1800003600,
+    "nbf": 1800003600,
+    "exp": 1800007200,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   }
+  },
+  {
+   "name": "wrong_audience",
+   "expect": "audience",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "55555555-5555-5555-5555-555555555555",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   }
+  },
+  {
+   "name": "wrong_issuer",
+   "expect": "issuer",
+   "signer": "good",
+   "claims": {
+    "iss": "https://evil.example.com/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   }
+  },
+  {
+   "name": "issuer_tid_mismatch",
+   "expect": "issuer",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/33333333-3333-3333-3333-333333333333/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   }
+  },
+  {
+   "name": "wrong_tenant",
+   "expect": "tenant",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/33333333-3333-3333-3333-333333333333/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "33333333-3333-3333-3333-333333333333",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   }
+  },
+  {
+   "name": "personal_account",
+   "expect": "personal_account",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "9188040d-6c67-4c5b-b112-36a304b66dad",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   }
+  },
+  {
+   "name": "alg_none",
+   "expect": "alg",
+   "signer": "none",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   }
+  },
+  {
+   "name": "alg_hs256_public_key",
+   "expect": "alg",
+   "signer": "hs256",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   }
+  },
+  {
+   "name": "bad_signature_other_key",
+   "expect": "signature",
+   "signer": "other",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   }
+  },
+  {
+   "name": "tampered_payload",
+   "expect": "signature",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   },
+   "tamper": {
+    "oid": "66666666-6666-6666-6666-666666666666"
+   }
+  },
+  {
+   "name": "unknown_kid",
+   "expect": "kid",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   },
+   "header": {
+    "kid": "nope"
+   }
+  },
+  {
+   "name": "missing_kid",
+   "expect": "kid",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   },
+   "header": {}
+  },
+  {
+   "name": "missing_kid_keyset_has_keyless_entry",
+   "expect": "kid",
+   "signer": "nokid",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   },
+   "header": {}
+  },
+  {
+   "name": "non_rsa_key",
+   "expect": "kid",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   },
+   "header": {
+    "kid": "oct1"
+   }
+  },
+  {
+   "name": "wrong_nonce",
+   "expect": "nonce",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "other",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   }
+  },
+  {
+   "name": "missing_nonce",
+   "expect": "nonce",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   }
+  },
+  {
+   "name": "missing_oid",
+   "expect": "claims",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "sub": "subject-for-tests",
+    "ver": "2.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   }
+  },
+  {
+   "name": "wrong_version",
+   "expect": "claims",
+   "signer": "good",
+   "claims": {
+    "iss": "https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0",
+    "aud": "11111111-1111-1111-1111-111111111111",
+    "tid": "22222222-2222-2222-2222-222222222222",
+    "oid": "44444444-4444-4444-4444-444444444444",
+    "sub": "subject-for-tests",
+    "ver": "1.0",
+    "iat": 1799999940,
+    "nbf": 1799999940,
+    "exp": 1800003600,
+    "nonce": "nonce-for-tests",
+    "roles": [
+     "reader"
+    ],
+    "email": "user@example.com"
+   }
+  },
+  {
+   "name": "not_a_token",
+   "expect": "malformed",
+   "signer": "good",
+   "claims": {},
+   "raw": "abc"
+  },
+  {
+   "name": "token_null",
+   "expect": "malformed",
+   "signer": "good",
+   "claims": {},
+   "raw": null
+  }
+ ]
+}
