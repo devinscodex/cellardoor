@@ -109,6 +109,11 @@ def _printable(text):
     return "".join(c if c.isprintable() else "?" for c in str(text))
 
 
+def prune_audit(conn, days, now):
+    """Delete audit rows older than `days` days. Returns the number removed."""
+    return conn.execute("DELETE FROM audit WHERE time < ?", (now - days * 86400,)).rowcount
+
+
 def audit(conn, event, actor, detail="", now=None):
     now = int(time.time() if now is None else now)
     actor, detail = _printable(actor), _printable(detail)
@@ -241,6 +246,7 @@ def login_entra(conn, identity, now):
 
 
 def create_session(conn, user_id, now, ttl=8 * 3600):
+    conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
     token = new_token()
     conn.execute("INSERT INTO sessions (user_id, token_hash, created_at, expires_at, last_seen) "
                  "VALUES (?,?,?,?,?)", (user_id, hash_token(token), now, now + ttl, now))

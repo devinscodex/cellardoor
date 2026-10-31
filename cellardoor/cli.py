@@ -1,4 +1,4 @@
-"""cellardoor command line: init, user, invite, audit, check, pepper, serve.
+"""cellardoor command line: init, user, invite, audit, backup, check, pepper, serve.
 
 The database lives in one directory (CELLARDOOR_DIR or --dir), mode 600. Pepper files
 (pepper.p1, pepper.p2 ...) are mode 600 and may live in a separate directory. Passwords are read with getpass, never from arguments.
@@ -8,6 +8,7 @@ import getpass
 import os
 import re
 import signal
+import sqlite3
 import sys
 import threading
 import time
@@ -115,6 +116,28 @@ def cmd_init(args, out):
     out("next: cellardoor user add NAME --admin")
 
 
+def cmd_backup(args, out):
+    """Copy the database with SQLite's backup API. Pepper files are never included."""
+    dest = os.path.abspath(args.dest)
+    if os.path.dirname(dest) == os.path.abspath(pepper_dir(args)):
+        raise CliError("refusing to write a backup into the pepper directory")
+    try:
+        os.close(os.open(dest, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600))
+    except FileExistsError:
+        raise CliError(f"backup target exists: {dest}") from None
+    src = store.connect(db_path(args.dir))
+    dst = sqlite3.connect(dest)
+    try:
+        src.backup(dst)
+        result = dst.execute("PRAGMA integrity_check").fetchone()[0]
+    finally:
+        dst.close()
+        src.close()
+    if result != "ok":
+        raise CliError(f"backup failed integrity check: {result}")
+    out(f"backup written: {dest} (mode 600, no pepper). Encrypt it before it leaves this host.")
+
+
 def cmd_pepper(args, out):
     pdir = pepper_dir(args)
     peppers = load_peppers(pdir)
@@ -186,6 +209,11 @@ def cmd_invite(args, out):
 
 def cmd_audit(args, out):
     conn = store.connect(db_path(args.dir))
+    if args.prune:
+        with conn:
+            removed = store.prune_audit(conn, args.prune, int(time.time()))
+        out(f"removed {removed} audit rows older than {args.prune} days")
+        return
     rows = conn.execute("SELECT * FROM audit ORDER BY id DESC LIMIT ?", (args.last,)).fetchall()
     for r in reversed(rows):
         stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r["time"]))
@@ -291,6 +319,10 @@ def build_parser():
     inv.add_argument("--days", type=int, default=7)
     aud = sub.add_parser("audit")
     aud.add_argument("--last", type=int, default=20)
+    aud.add_argument("--prune", type=int, default=0, metavar="DAYS",
+                     help="delete audit rows older than DAYS instead of listing")
+    bak = sub.add_parser("backup")
+    bak.add_argument("dest", help="new file to write; must not exist")
     sub.add_parser("check")
     pep = sub.add_parser("pepper")
     psub = pep.add_subparsers(dest="action", required=True)
@@ -312,7 +344,7 @@ def build_parser():
 def main(argv=None, out=print):
     args = build_parser().parse_args(argv)
     handlers = {"init": cmd_init, "user": cmd_user, "invite": cmd_invite,
-                "audit": cmd_audit, "check": cmd_check, "serve": cmd_serve,
+                "audit": cmd_audit, "backup": cmd_backup, "check": cmd_check, "serve": cmd_serve,
                 "pepper": lambda a, o: (cmd_pepper if a.action == "rotate"
                                         else cmd_pepper_status)(a, o)}
     try:

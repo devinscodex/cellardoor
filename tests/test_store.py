@@ -458,3 +458,10 @@ def test_failure_audit_records_source_ip(conn, alice):
     store.login_local(conn, "alice", "wrong password!!", PEPPERS, NOW, ip="203.0.113.9")
     detail = conn.execute("SELECT detail FROM audit WHERE event='signin-fail'").fetchone()[0]
     assert "203.0.113.9" in detail
+
+
+def test_expired_sessions_are_deleted_when_a_new_one_is_made(conn, alice):
+    old = store.create_session(conn, alice, NOW, ttl=10)
+    store.create_session(conn, alice, NOW + 100, ttl=10)
+    assert conn.execute("SELECT count(*) FROM sessions").fetchone()[0] == 1
+    assert store.get_session(conn, old, NOW + 100) is None

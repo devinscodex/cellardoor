@@ -228,3 +228,45 @@ def test_pepper_rotation_moves_users_at_next_signin(run, tmp_path):
     status = run("pepper", "status")[1]
     assert "p2: 1 identities" in status and "p1: 0 identities" in status
     assert crypto.current_version({"p9": b"x", "p10": b"y", "p2": b"z"}) == "p10"
+
+
+def test_backup_is_private_complete_and_has_no_pepper(run, tmp_path):
+    import sqlite3
+    run("init")
+    run("user", "add", "devin", "--admin")
+    dest = str(tmp_path / "out" / "b.db")
+    os.makedirs(os.path.dirname(dest))
+    rc, text = run("backup", dest)
+    assert rc == 0 and "no pepper" in text
+    assert os.stat(dest).st_mode & 0o777 == 0o600
+    c = sqlite3.connect(dest)
+    assert c.execute("SELECT username FROM users").fetchone()[0] == "devin"
+    assert c.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    pepper = open(os.path.join(run.dir, "pepper.p1"), "rb").read()
+    assert pepper not in open(dest, "rb").read()
+
+
+def test_backup_refuses_existing_target_and_pepper_directory(run, tmp_path):
+    run("init")
+    existing = tmp_path / "x.db"
+    existing.write_text("keep")
+    rc, text = run("backup", str(existing))
+    assert rc == 1 and "exists" in text and existing.read_text() == "keep"
+    rc, text = run("backup", os.path.join(run.dir, "b.db"))
+    assert rc == 1 and "pepper directory" in text
+
+
+def test_audit_prune_removes_only_old_rows(run):
+    import sqlite3
+    run("init")
+    run("user", "add", "a", "--admin")
+    db = os.path.join(run.dir, "cellardoor.db")
+    c = sqlite3.connect(db)
+    c.execute("INSERT INTO audit (time, event, actor, detail) VALUES (1000, 'old', 'x', '')")
+    c.commit()
+    c.close()
+    rc, text = run("audit", "--prune", "30")
+    assert rc == 0 and "removed 1" in text
+    c = sqlite3.connect(db)
+    assert c.execute("SELECT count(*) FROM audit WHERE event='old'").fetchone()[0] == 0
+    assert c.execute("SELECT count(*) FROM audit").fetchone()[0] >= 1
