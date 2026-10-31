@@ -203,7 +203,8 @@ def test_safe_next_random_never_escapes_site():
 
 def test_login_returns_503_when_hash_slots_are_full(env):
     slots = env["app"].hash_slots
-    held = [slots.acquire() for _ in range(server.HASH_SLOTS)]
+    assert server.HASH_SLOTS == 4
+    held = [slots.acquire() for _ in range(4)]
     r, _ = login(env)
     assert r.status == 503 and r.getheader("Retry-After") == "5"
     for _ in held:
@@ -370,3 +371,23 @@ def test_response_headers_are_exact(env):
         assert r.getheader("Referrer-Policy") == "no-referrer"
         assert r.getheader("X-Content-Type-Options") == "nosniff"
         assert "python" not in (r.getheader("Server") or "").lower()
+
+
+def test_socket_timeout_is_a_short_number():
+    assert 0 < server.SOCKET_TIMEOUT <= 30
+
+
+def test_negative_content_length_is_rejected(env):
+    c = http.client.HTTPConnection("127.0.0.1", env["port"])
+    c.putrequest("POST", "/login")
+    c.putheader("Origin", env["app"].origin)
+    c.putheader("Content-Type", "application/x-www-form-urlencoded")
+    c.putheader("Content-Length", "-1")
+    c.endheaders()
+    assert c.getresponse().status == 413
+
+
+def test_limiter_forgets_a_hit_exactly_at_the_window_edge():
+    lim = server.Limiter(2, 60)
+    assert lim.allow("a", 100) and lim.allow("a", 101)
+    assert lim.allow("a", 160)
