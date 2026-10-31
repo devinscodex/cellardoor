@@ -272,3 +272,20 @@ def test_audit_prune_removes_only_old_rows(run):
     c = sqlite3.connect(db)
     assert c.execute("SELECT count(*) FROM audit WHERE event='old'").fetchone()[0] == 0
     assert c.execute("SELECT count(*) FROM audit").fetchone()[0] >= 1
+
+
+def test_passwd_sets_a_new_password_and_ends_sessions(run, monkeypatch):
+    from cellardoor import store
+    run("init")
+    run("user", "add", "devin", "--admin")
+    peppers = cli.load_peppers(run.dir)
+    conn = store.connect(cli.db_path(run.dir))
+    with conn:
+        token = store.create_session(conn, 1, 1_800_000_000)
+    new = "an entirely new passphrase"
+    monkeypatch.setattr(cli.getpass, "getpass", lambda prompt="": new)
+    rc, text = run("user", "passwd", "devin")
+    assert rc == 0 and "ok" in text
+    conn = store.connect(cli.db_path(run.dir))
+    assert store.get_session(conn, token, 1_800_000_001) is None
+    assert store.login_local(conn, "devin", new, peppers, 1_800_000_002) is not None

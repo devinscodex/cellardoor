@@ -5,6 +5,7 @@ stored. Time is passed in (`now`, epoch seconds) so behaviour is testable.
 """
 import hashlib
 import os
+import re
 import sqlite3
 import time
 
@@ -22,6 +23,7 @@ ROLES = ("admin", "user", "guest")
 INVITE_ROLES = ("user", "guest")
 PROVIDERS = ("local", "entra", "proxy")
 MAX_FAILURES = 5
+SEEN_STEP = 60
 LOCK_SECONDS = 900
 SCHEMA_VERSION = 1
 
@@ -143,9 +145,14 @@ def _user(conn, user_id):
     return row
 
 
+USERNAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@+-]{0,63}")
+
+
 def create_user(conn, username, role, now, expires_at=None, actor="system"):
     if role not in ROLES:
         raise StoreError("bad_role")
+    if not USERNAME.fullmatch(username):
+        raise StoreError("bad_username")
     try:
         cur = conn.execute(
             "INSERT INTO users (username, role, expires_at, created_at) VALUES (?,?,?,?)",
@@ -222,6 +229,20 @@ def login_local(conn, username, password, peppers, now, ip=""):
     return user
 
 
+def set_password(conn, user_id, password, peppers, now, actor):
+    """Replace a user's local password and end all their sessions."""
+    user = _user(conn, user_id)
+    ident = conn.execute("SELECT id FROM identities WHERE provider = 'local' AND user_id = ?",
+                         (user_id,)).fetchone()
+    if ident is None:
+        raise StoreError("no_local_identity")
+    conn.execute("UPDATE identities SET password_hash = ?, failed = 0, locked_until = 0 "
+                 "WHERE id = ?", (hash_password(password, peppers, current_version(peppers)),
+                                  ident["id"]))
+    revoke_user_sessions(conn, user_id)
+    audit(conn, "password-change", actor, user["username"], now)
+
+
 def unlock(conn, user_id, now, actor):
     """Clear the failure counter and any lock on a user's identities."""
     user = _user(conn, user_id)
@@ -261,7 +282,8 @@ def get_session(conn, token, now, idle=1800):
     user = _user(conn, row["user_id"])
     if not _active(user, now):
         return None
-    conn.execute("UPDATE sessions SET last_seen = ? WHERE id = ?", (now, row["id"]))
+    if now - row["last_seen"] >= SEEN_STEP:
+        conn.execute("UPDATE sessions SET last_seen = ? WHERE id = ?", (now, row["id"]))
     return user
 
 

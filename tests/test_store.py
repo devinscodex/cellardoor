@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cellardoor import store
+from cellardoor import crypto, store
 from cellardoor.crypto import (
     CryptoError,
     hash_password,
@@ -465,3 +465,45 @@ def test_expired_sessions_are_deleted_when_a_new_one_is_made(conn, alice):
     store.create_session(conn, alice, NOW + 100, ttl=10)
     assert conn.execute("SELECT count(*) FROM sessions").fetchone()[0] == 1
     assert store.get_session(conn, old, NOW + 100) is None
+
+
+@pytest.mark.parametrize("bad", ["", " a", "a b", "a\nb", "a\x00", "-lead", ".lead", "é", "a" * 65,
+                                 "x<script>", "a/b", "a;b"])
+def test_bad_usernames_are_rejected(conn, bad):
+    with pytest.raises(store.StoreError) as exc:
+        store.create_user(conn, bad, "user", NOW)
+    assert exc.value.code == "bad_username"
+
+
+@pytest.mark.parametrize("good", ["a", "Devin", "j.doe", "a_b-c", "me@example.com", "a+b", "x" * 64])
+def test_good_usernames_are_accepted(conn, good):
+    assert store.create_user(conn, good, "user", NOW)
+
+
+def test_session_last_seen_is_written_at_most_once_a_minute(conn, alice):
+    token = store.create_session(conn, alice, NOW)
+    seen = lambda: conn.execute("SELECT last_seen FROM sessions").fetchone()[0]
+    store.get_session(conn, token, NOW + 10)
+    assert seen() == NOW
+    store.get_session(conn, token, NOW + store.SEEN_STEP)
+    assert seen() == NOW + store.SEEN_STEP
+
+
+def test_set_password_replaces_hash_and_ends_sessions(conn, alice):
+    token = store.create_session(conn, alice, NOW)
+    new = "a different long passphrase"
+    with conn:
+        store.set_password(conn, alice, new, PEPPERS, NOW, "test")
+    assert store.get_session(conn, token, NOW + 1) is None
+    assert store.login_local(conn, "alice", PW, PEPPERS, NOW + 1) is None
+    assert store.login_local(conn, "alice", new, PEPPERS, NOW + 2) is not None
+    assert conn.execute("SELECT 1 FROM audit WHERE event='password-change'").fetchone()
+
+
+def test_set_password_enforces_policy_and_needs_a_local_identity(conn, alice):
+    with pytest.raises(crypto.CryptoError):
+        store.set_password(conn, alice, "short", PEPPERS, NOW, "test")
+    entra_only = store.create_user(conn, "eve", "user", NOW)
+    with pytest.raises(store.StoreError) as exc:
+        store.set_password(conn, entra_only, "a long enough passphrase", PEPPERS, NOW, "test")
+    assert exc.value.code == "no_local_identity"
