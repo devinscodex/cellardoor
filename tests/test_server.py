@@ -260,3 +260,18 @@ def test_trusted_proxy_gives_each_client_its_own_bucket(env):
     assert r.status == 303
     r, _ = login(env, headers={"X-Real-IP": "not-an-ip"})
     assert r.status == 303
+
+
+def test_hsts_only_when_cookies_are_secure(env):
+    r, _ = call(env, "GET", "/login")
+    assert r.getheader("Strict-Transport-Security") is None
+    secure = server.App(env["db"], PEPPERS, "https://example.test", secure_cookies=True)
+    httpd = server.serve(secure, "127.0.0.1", 0)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    c = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1])
+    c.request("GET", "/login")
+    resp = c.getresponse()
+    resp.read()
+    assert resp.getheader("Strict-Transport-Security") == "max-age=31536000"
+    httpd.shutdown()
+    httpd.server_close()
