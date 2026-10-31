@@ -141,7 +141,11 @@ def make_handler(app):
                 self.send(413)
                 return None
             data = self.rfile.read(length).decode("utf-8", "replace")
-            return {k: v[0] for k, v in parse_qs(data, max_num_fields=8).items()}
+            try:
+                return {k: v[0] for k, v in parse_qs(data, max_num_fields=8).items()}
+            except ValueError:
+                self.send(400)
+                return None
 
         def cookie_header(self, value, max_age):
             attrs = f"{app.cookie_name}={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}"

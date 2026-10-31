@@ -275,3 +275,11 @@ def test_hsts_only_when_cookies_are_secure(env):
     assert resp.getheader("Strict-Transport-Security") == "max-age=31536000"
     httpd.shutdown()
     httpd.server_close()
+
+
+def test_too_many_form_fields_is_400(env):
+    body = "&".join(f"f{i}=1" for i in range(9))
+    r, _ = call(env, "POST", "/login", body)
+    assert r.status == 400
+    r, _ = login(env)
+    assert r.status == 303
