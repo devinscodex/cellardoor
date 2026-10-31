@@ -1,6 +1,7 @@
 """HTTP layer: local sign-in, sign-out and a session check, on the standard library.
 
-Routes: GET /login, POST /login, POST /logout, GET /me, GET /healthz.
+Routes: GET+POST /login, POST /logout, GET /me, GET /healthz, GET /auth (for a reverse
+proxy), GET+POST /invite, GET+POST /password.
 POST requests must carry an Origin header equal to the configured origin.
 """
 import html
@@ -13,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 from . import store
+from .crypto import CryptoError, check_password_policy, current_version
 
 MAX_BODY = 4096
 LOGIN_ATTEMPTS = 20
@@ -37,6 +39,43 @@ FORM = """<!doctype html>
 <p><button type="submit">Sign in</button></p>
 </form></body></html>
 """
+
+
+PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>{title}</title></head>
+<body><h1>{title}</h1>{message}
+<form method="post" action="{action}">
+{fields}<p><button type="submit">{button}</button></p>
+</form></body></html>
+"""
+INVITE_FIELDS = (
+    '<p><label>Invite code <input name="code" autocomplete="off" maxlength="128" required></label></p>\n'
+    '<p><label>Username <input name="username" autocomplete="username" maxlength="64" required></label></p>\n'
+    '<p><label>Password <input name="password" type="password" autocomplete="new-password" '
+    'maxlength="128" required></label></p>\n'
+    '<p><label>Password again <input name="again" type="password" autocomplete="new-password" '
+    'maxlength="128" required></label></p>\n')
+CHANGE_FIELDS = (
+    '<p><label>Current password <input name="current" type="password" '
+    'autocomplete="current-password" maxlength="128" required></label></p>\n'
+    '<p><label>New password <input name="password" type="password" autocomplete="new-password" '
+    'maxlength="128" required></label></p>\n'
+    '<p><label>New password again <input name="again" type="password" '
+    'autocomplete="new-password" maxlength="128" required></label></p>\n')
+INVITE_ERRORS = {
+    "invite_invalid": "That invite code is not valid.",
+    "invite_expired": "That invite code is not valid.",
+    "invite_used": "That invite code is not valid.",
+    "user_exists": "That username is taken.",
+    "identity_exists": "That username is taken.",
+    "bad_username": "Usernames use letters, digits and . _ @ + - (1 to 64 characters).",
+    "password_policy": "The password must be 12 to 128 characters.",  # nosec B105 message text
+}
+
+
+def page(title, action, fields, button, message=""):
+    note = f"<p>{html.escape(message)}</p>" if message else ""
+    return PAGE.format(title=title, action=action, fields=fields, button=button, message=note)
 
 
 def safe_next(value):
@@ -91,13 +130,15 @@ def make_handler(app):
             if isinstance(body, str):
                 body = body.encode()
             self.send_response(status)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(body)))
+            if status != 204:
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
             hsts = ((("Strict-Transport-Security", "max-age=31536000"),) if app.secure else ())
             for k, v in SECURITY_HEADERS + hsts + tuple(extra):
                 self.send_header(k, v)
             self.end_headers()
-            self.wfile.write(body)
+            if status != 204:
+                self.wfile.write(body)
 
         def send_json(self, status, obj):
             self.send(status, json.dumps(obj), "application/json")
@@ -159,6 +200,12 @@ def make_handler(app):
             elif parts.path == "/login":
                 nxt = safe_next(parse_qs(parts.query).get("next", ["/me"])[0])
                 self.send(200, FORM.format(message="", next=html.escape(nxt, quote=True)))
+            elif parts.path == "/auth":
+                self.auth_check(now)
+            elif parts.path == "/invite":
+                self.send(200, page("Create your account", "/invite", INVITE_FIELDS, "Create account"))
+            elif parts.path == "/password":
+                self.password_page(now)
             elif parts.path == "/me":
                 conn = store.connect(app.db_path)
                 with conn:
@@ -172,7 +219,7 @@ def make_handler(app):
 
         def do_POST(self):
             path = urlsplit(self.path).path
-            if path not in ("/login", "/logout"):
+            if path not in ("/login", "/logout", "/invite", "/password"):
                 self.send(404)
                 return
             if not self.origin_ok():
@@ -184,6 +231,10 @@ def make_handler(app):
             now = int(app.clock())
             if path == "/login":
                 self.login(form, now)
+            elif path == "/invite":
+                self.invite(form, now)
+            elif path == "/password":
+                self.password(form, now)
             else:
                 self.logout(now)
 
@@ -209,6 +260,94 @@ def make_handler(app):
                 self.send(401, FORM.format(message=msg, next=html.escape(nxt, quote=True)))
                 return
             self.send(303, extra=(("Location", nxt), self.cookie_header(token, app.ttl)))
+
+        def auth_check(self, now):
+            """Answer a reverse proxy's auth_request: 204 with the user, or 401."""
+            conn = store.connect(app.db_path)
+            with conn:
+                user, _ = self.session_user(conn, now)
+            if user is None:
+                self.send(401, "unauthenticated", "text/plain")
+            else:
+                self.send(204, extra=(("X-CD-User", user["username"]),
+                                      ("X-CD-Role", user["role"])))
+
+        def password_page(self, now):
+            conn = store.connect(app.db_path)
+            with conn:
+                user, _ = self.session_user(conn, now)
+            if user is None:
+                self.send(303, extra=(("Location", "/login?next=/password"),))
+                return
+            self.send(200, page("Change password", "/password", CHANGE_FIELDS, "Change password"))
+
+        def busy(self):
+            """True (after answering) when the caller is rate limited or hashing is saturated."""
+            if not app.limiter.allow(self.client_ip(), int(app.clock())):
+                self.send(429, "too many attempts", "text/plain", (("Retry-After", "60"),))
+                return True
+            return False
+
+        def invite(self, form, now):
+            if self.busy():
+                return
+            shown = lambda msg: self.send(400, page(
+                "Create your account", "/invite", INVITE_FIELDS, "Create account", msg))
+            if form.get("password", "") != form.get("again", ""):
+                return shown("The passwords do not match.")
+            if not app.hash_slots.acquire(blocking=False):
+                self.send(503, "busy", "text/plain", (("Retry-After", "5"),))
+                return
+            try:
+                conn = store.connect(app.db_path)
+                with conn:
+                    store.redeem_invite(conn, form.get("code", ""), form.get("username", ""), now,
+                                        password=form.get("password", ""), peppers=app.peppers,
+                                        version=current_version(app.peppers))
+            except (store.StoreError, CryptoError) as e:
+                return shown(INVITE_ERRORS.get(e.code, "The account could not be created."))
+            finally:
+                app.hash_slots.release()
+            self.send(303, extra=(("Location", "/login"),))
+
+        def password(self, form, now):
+            if self.busy():
+                return
+            conn = store.connect(app.db_path)
+            with conn:
+                user, _ = self.session_user(conn, now)
+            if user is None:
+                self.send(303, extra=(("Location", "/login?next=/password"),))
+                return
+            shown = lambda msg: self.send(400, page(
+                "Change password", "/password", CHANGE_FIELDS, "Change password", msg))
+            new = form.get("password", "")
+            if new != form.get("again", ""):
+                return shown("The new passwords do not match.")
+            try:
+                check_password_policy(new)
+            except CryptoError:
+                return shown("The new password must be 12 to 128 characters.")
+            if not app.hash_slots.acquire(blocking=False):
+                self.send(503, "busy", "text/plain", (("Retry-After", "5"),))
+                return
+            try:
+                conn = store.connect(app.db_path)
+                with conn:
+                    ok = store.login_local(conn, user["username"], form.get("current", ""),
+                                           app.peppers, now, ip=self.client_ip())
+                    token = None
+                    if ok:
+                        store.set_password(conn, user["id"], new, app.peppers, now, user["username"])
+                        token = store.create_session(conn, user["id"], now, app.ttl)
+            except store.StoreError as e:
+                return shown("This account has no password here." if e.code == "no_local_identity"
+                             else "The password could not be changed.")
+            finally:
+                app.hash_slots.release()
+            if token is None:
+                return shown("The current password is wrong.")
+            self.send(303, extra=(("Location", "/me"), self.cookie_header(token, app.ttl)))
 
         def logout(self, now):
             conn = store.connect(app.db_path)

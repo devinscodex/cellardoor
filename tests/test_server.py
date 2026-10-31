@@ -391,3 +391,156 @@ def test_limiter_forgets_a_hit_exactly_at_the_window_edge():
     lim = server.Limiter(2, 60)
     assert lim.allow("a", 100) and lim.allow("a", 101)
     assert lim.allow("a", 160)
+
+
+def form(**kw):
+    from urllib.parse import urlencode
+    return urlencode(kw)
+
+
+def cookie_for(env, username="alice"):
+    conn = store.connect(env["db"])
+    with conn:
+        uid = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()[0]
+        token = store.create_session(conn, uid, int(env["clock"]()), 3600)
+    return f"cd_session={token}"
+
+
+def new_invite(env, role="user"):
+    conn = store.connect(env["db"])
+    with conn:
+        return store.create_invite(conn, role, None, int(env["clock"]()))
+
+
+def test_auth_endpoint_204_with_identity_headers(env):
+    r, body = call(env, "GET", "/auth", headers={"Cookie": cookie_for(env)})
+    assert r.status == 204 and body == ""
+    assert r.getheader("X-CD-User") == "alice" and r.getheader("X-CD-Role") == "admin"
+    assert r.getheader("Content-Length") is None
+    assert r.getheader("Cache-Control") == "no-store"
+
+
+def test_auth_endpoint_401_without_valid_session(env):
+    for headers in ({}, {"Cookie": "cd_session=nope"}, {"Cookie": "other=1"}):
+        r, _ = call(env, "GET", "/auth", headers=headers)
+        assert r.status == 401 and r.getheader("X-CD-User") is None
+
+
+def test_auth_endpoint_follows_disable_logout_and_expiry(env):
+    ck = cookie_for(env, "bob")
+    assert call(env, "GET", "/auth", headers={"Cookie": ck})[0].status == 204
+    conn = store.connect(env["db"])
+    with conn:
+        bob = conn.execute("SELECT id FROM users WHERE username = 'bob'").fetchone()[0]
+        store.set_disabled(conn, bob, True, NOW, "t")
+    assert call(env, "GET", "/auth", headers={"Cookie": ck})[0].status == 401
+    ck2 = cookie_for(env, "alice")
+    env["clock"].t += 3601
+    assert call(env, "GET", "/auth", headers={"Cookie": ck2})[0].status == 401
+
+
+def test_invite_page_and_successful_redeem(env):
+    r, body = call(env, "GET", "/invite")
+    assert r.status == 200 and 'name="code"' in body
+    code = new_invite(env)
+    r, _ = call(env, "POST", "/invite", form(code=code, username="carol", password=PW, again=PW))
+    assert r.status == 303 and r.getheader("Location") == "/login"
+    r, _ = login(env, "carol")
+    assert r.status == 303
+    r, _ = call(env, "POST", "/invite", form(code=code, username="dave", password=PW, again=PW))
+    assert r.status == 400 and "not valid" in _
+
+
+def test_guest_invite_gets_an_expiry(env):
+    code = new_invite(env, "guest")
+    call(env, "POST", "/invite", form(code=code, username="gina", password=PW, again=PW))
+    conn = store.connect(env["db"])
+    role, exp = conn.execute("SELECT role, expires_at FROM users WHERE username='gina'").fetchone()
+    assert role == "guest" and exp > NOW
+
+
+@pytest.mark.parametrize("fields,message", [
+    ({"password": PW, "again": "different"}, "do not match"),
+    ({"password": "short", "again": "short"}, "12 to 128"),
+    ({"username": "bad name", "password": PW, "again": PW}, "Usernames use"),
+    ({"username": "alice", "password": PW, "again": PW}, "taken"),
+])
+def test_failed_redeem_keeps_the_invite_usable(env, fields, message):
+    code = new_invite(env)
+    data = {"code": code, "username": "newuser", **fields}
+    r, body = call(env, "POST", "/invite", form(**data))
+    assert r.status == 400 and message in body
+    r, _ = call(env, "POST", "/invite", form(code=code, username="newuser", password=PW, again=PW))
+    assert r.status == 303
+
+
+def test_invite_code_errors_look_the_same(env):
+    used = new_invite(env)
+    call(env, "POST", "/invite", form(code=used, username="u1", password=PW, again=PW))
+    bodies = set()
+    for code in (used, "nope", ""):
+        r, body = call(env, "POST", "/invite", form(code=code, username="u2", password=PW, again=PW))
+        assert r.status == 400
+        bodies.add(body)
+    assert len(bodies) == 1
+
+
+def test_invite_is_rate_limited_and_needs_origin(env):
+    r, _ = call(env, "POST", "/invite", form(code="x"), origin=False)
+    assert r.status == 403
+    codes = [call(env, "POST", "/invite", form(code="x", username="u", password=PW,
+                                                again=PW))[0].status
+             for _ in range(server.LOGIN_ATTEMPTS + 2)]
+    assert codes[-1] == 429
+
+
+def test_password_page_needs_a_session(env):
+    r, _ = call(env, "GET", "/password")
+    assert r.status == 303 and r.getheader("Location") == "/login?next=/password"
+    r, body = call(env, "GET", "/password", headers={"Cookie": cookie_for(env)})
+    assert r.status == 200 and 'name="current"' in body
+    r, _ = call(env, "POST", "/password", form(current=PW, password="n" * 14, again="n" * 14))
+    assert r.status == 303 and r.getheader("Location") == "/login?next=/password"
+
+
+def test_password_change_success_replaces_session_and_password(env):
+    old = cookie_for(env)
+    new = "a brand new passphrase"
+    r, _ = call(env, "POST", "/password", form(current=PW, password=new, again=new),
+                headers={"Cookie": old})
+    assert r.status == 303 and r.getheader("Location") == "/me"
+    fresh = cookie_of(r)
+    assert call(env, "GET", "/me", headers={"Cookie": old})[0].status == 401
+    assert call(env, "GET", "/me", headers={"Cookie": fresh})[0].status == 200
+    assert login(env, "alice", PW)[0].status == 401
+    assert login(env, "alice", new.replace(" ", "+"))[0].status == 303
+
+
+@pytest.mark.parametrize("fields,message", [
+    ({"current": PW, "password": "x" * 14, "again": "y" * 14}, "do not match"),
+    ({"current": PW, "password": "short", "again": "short"}, "12 to 128"),
+    ({"current": "wrong password!!", "password": "x" * 14, "again": "x" * 14}, "current password is wrong"),
+])
+def test_password_change_failures(env, fields, message):
+    r, body = call(env, "POST", "/password", form(**fields), headers={"Cookie": cookie_for(env)})
+    assert r.status == 400 and message in body
+    assert login(env, "alice")[0].status == 303
+
+
+def test_wrong_current_password_counts_toward_lockout(env):
+    ck = cookie_for(env)
+    for _ in range(store.MAX_FAILURES):
+        call(env, "POST", "/password", form(current="wrong password!!", password="x" * 14,
+                                            again="x" * 14), headers={"Cookie": ck})
+    assert login(env)[0].status == 401
+
+
+def test_password_change_refused_for_account_without_local_password(env):
+    conn = store.connect(env["db"])
+    with conn:
+        uid = store.create_user(conn, "erin", "user", NOW)
+        token = store.create_session(conn, uid, NOW, 3600)
+        store.add_entra_identity(conn, uid, "t1", "o1")
+    r, body = call(env, "POST", "/password", form(current=PW, password="x" * 14, again="x" * 14),
+                   headers={"Cookie": f"cd_session={token}"})
+    assert r.status == 400 and "current password is wrong" in body
