@@ -182,3 +182,20 @@ def test_unknown_paths_and_methods(env):
     assert call(env, "GET", "/nope")[0].status == 404
     assert call(env, "POST", "/nope", "")[0].status == 404
     assert call(env, "GET", "/healthz")[0].status == 200
+
+
+@pytest.mark.parametrize("bad", ["/\t/evil.com", "/a\tb", "/a b", "/a\x00b", "//evil.com",
+                                 "/\\evil.com", "/a\r\nSet-Cookie: x=1", "https://evil.com", ""])
+def test_safe_next_rejects_unsafe(bad):
+    assert server.safe_next(bad) == "/me"
+
+
+def test_safe_next_random_never_escapes_site():
+    import random
+    rng = random.Random(7)
+    alphabet = "/\\\t\r\n .:%a@?#\x00\x7f"
+    for _ in range(5000):
+        value = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 8)))
+        out = server.safe_next(value)
+        assert out.startswith("/") and not out.startswith("//")
+        assert out.isprintable() and "\\" not in out and " " not in out

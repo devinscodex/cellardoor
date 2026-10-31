@@ -38,7 +38,7 @@ FORM = """<!doctype html>
 def safe_next(value):
     """Allow only same-site absolute paths; anything else becomes /me."""
     if value.startswith("/") and not value.startswith("//") and "\\" not in value \
-            and "\n" not in value and "\r" not in value:
+            and value.isprintable() and " " not in value:
         return value
     return "/me"
 
