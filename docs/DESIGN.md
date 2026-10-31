@@ -103,8 +103,9 @@ server and a TypeScript client. Roles, limits, admin page and packaging follow.
   the token is unguessable.
 - Emails, names and the audit log must be readable, so they are protected by disk
   encryption, file permissions and encrypted backups, not hashing.
-- Client secrets, signing keys and the pepper come from environment variables or
-  files with mode 600. Never from the database or the repository.
+- Client secrets, signing keys and the pepper come from files with mode 600 or
+  systemd credentials. The pepper directory can differ from the data directory.
+  Never from the database or the repository.
 - A pepper only helps when the attacker gets the database but not the server's
   secrets. Full server compromise exposes both.
 

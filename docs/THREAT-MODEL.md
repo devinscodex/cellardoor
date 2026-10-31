@@ -38,11 +38,11 @@
 
 - An attacker who knows a username can lock that account for 15 minutes by guessing.
   `cellardoor user unlock NAME` clears it. The audit log records the source address.
-- The pepper is stored next to the database by default. Keep it out of backups.
-- Pepper rotation is not built.
+- The pepper is stored next to the database unless you set `--pepper-dir` or use
+  systemd credentials. Keep it out of backups. `backup` never includes it.
 - No TLS in the server. Use a reverse proxy.
 - No Entra sign-in routes, no password change or reset.
-- Expired sessions and old audit rows are not deleted yet.
+- Audit rows are kept until you run `audit --prune DAYS`.
 
 ## Out of scope
 

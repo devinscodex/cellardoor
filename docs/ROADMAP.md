@@ -15,18 +15,22 @@ deployment with real users.
 - Last-admin checks take the write lock first.
 - Each login guess is counted atomically before hashing. `user unlock` added.
 
+- `serve` refuses to start on: a data directory, database or pepper readable by
+  others, a short or non-random pepper, no active admin, an http origin, a non-loopback
+  listen address without `--allow-public-bind`.
+- Pepper files by version (`pepper.p1`, `pepper.p2`), in their own directory or in
+  systemd credentials. `pepper rotate` and `pepper status`. Users move at sign-in.
+- SIGTERM stops the server cleanly.
+- `backup` command. The pepper is never in it.
+- Expired sessions are deleted. `audit --prune DAYS`.
+- Hash-pinned `requirements.txt`. Example systemd unit and nginx file. `docs/DEPLOY.md`.
+
 ## Before real traffic
 
-1. `serve` refuses to start on a loose pepper or database mode, a weak pepper, an
-   http origin without the loopback flag, or no active admin.
-2. Load the pepper from a credential path (`--pepper-file` or systemd
-   `LoadCredential`), outside the data directory and the backup set.
-3. Pepper rotation: several `pepper.<version>` files, rehash at login when the
-   stored version is not the newest.
-4. Graceful stop on SIGTERM.
-5. `cellardoor backup`: SQLite backup API, mode 0600. The pepper is never in it.
-6. Example systemd unit and nginx file. Hash-pinned requirements.
-7. Delete expired sessions. Add `audit --prune DAYS`.
+1. Restore drill: restore one backup into a scratch directory, run `check`, sign in.
+2. Run the service under the example unit on a real host, with the reverse proxy, and
+   try the login from a browser over HTTPS.
+3. Test `MemoryDenyWriteExecute=yes` in the unit with argon2. Keep it only if it loads.
 
 ## Tests to add
 
@@ -37,8 +41,8 @@ deployment with real users.
 
 ## Docs and release
 
-- Replace the stale diagrams in `docs/diagrams/`. `architecture` is replaced; `data`,
-  `guest-lifecycle` and `signin` still need updating.
+- Replace the stale diagrams in `docs/diagrams/`. `architecture` and `target` are new;
+  `data`, `guest-lifecycle` and `signin` still need updating.
 - Continuous integration: tests, ruff, bandit.
 - Signed release tags.
 

@@ -6,7 +6,7 @@ connected to a route yet.
 
 Status: pre-release (0.0.x). Local sign-in works and is tested. Do not use it for
 real users until the items in [docs/ROADMAP.md](docs/ROADMAP.md) marked "before
-real traffic" are done. A reverse proxy is required: the server has no TLS.
+real traffic" are done. Deployment notes: [docs/DEPLOY.md](docs/DEPLOY.md). A reverse proxy is required: the server has no TLS.
 
 ## What works today
 
@@ -17,7 +17,8 @@ real traffic" are done. A reverse proxy is required: the server has no TLS.
 - Roles (admin, user, guest), expiry dates, invites, a last-admin guard.
 - Lockout after 5 wrong passwords, per-IP rate limit, an audit log.
 - Entra ID token verifier, tested against signed fixtures. No route calls it yet.
-- CLI: `init`, `user`, `invite`, `audit`, `check`, `serve`.
+- CLI: `init`, `user`, `invite`, `audit`, `backup`, `check`, `pepper`, `serve`.
+- `serve` refuses unsafe setups. Pepper rotation, backup and a systemd unit are included.
 
 ## Not built
 
