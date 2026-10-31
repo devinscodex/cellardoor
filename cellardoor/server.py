@@ -4,6 +4,7 @@ Routes: GET /login, POST /login, POST /logout, GET /me, GET /healthz.
 POST requests must carry an Origin header equal to the configured origin.
 """
 import html
+import ipaddress
 import json
 import threading
 import time
@@ -47,25 +48,32 @@ def safe_next(value):
 
 
 class Limiter:
+    SWEEP_AT = 1024
+
     def __init__(self, attempts, window):
         self.attempts, self.window, self.hits = attempts, window, {}
+        self.lock = threading.Lock()
 
     def allow(self, key, now):
-        recent = [t for t in self.hits.get(key, ()) if t > now - self.window]
-        if len(recent) >= self.attempts:
+        with self.lock:
+            if len(self.hits) > self.SWEEP_AT:
+                self.hits = {k: v for k, v in self.hits.items() if v and v[-1] > now - self.window}
+            recent = [t for t in self.hits.get(key, ()) if t > now - self.window]
+            if len(recent) >= self.attempts:
+                self.hits[key] = recent
+                return False
+            recent.append(now)
             self.hits[key] = recent
-            return False
-        recent.append(now)
-        self.hits[key] = recent
-        return True
+            return True
 
 
 class App:
     def __init__(self, db_path, peppers, origin, secure_cookies=True, session_ttl=8 * 3600,
-                 idle=1800, clock=time.time):
+                 idle=1800, clock=time.time, trusted_proxies=()):
         self.db_path, self.peppers, self.origin = db_path, peppers, origin
         self.secure, self.ttl, self.idle, self.clock = secure_cookies, session_ttl, idle, clock
         self.cookie_name = "__Host-cd_session" if secure_cookies else "cd_session"
+        self.trusted_proxies = frozenset(trusted_proxies)
         self.limiter = Limiter(LOGIN_ATTEMPTS, LOGIN_WINDOW)
         self.hash_slots = threading.BoundedSemaphore(HASH_SLOTS)
 
@@ -103,6 +111,15 @@ def make_handler(app):
             if morsel is None:
                 return None, None
             return store.get_session(conn, morsel.value, now, app.idle), morsel.value
+
+        def client_ip(self):
+            peer = self.client_address[0]
+            if peer in app.trusted_proxies:
+                try:
+                    return str(ipaddress.ip_address(self.headers.get("X-Real-IP", "").strip()))
+                except ValueError:
+                    pass
+            return peer
 
         def origin_ok(self):
             if self.headers.get("Origin") != app.origin:
@@ -166,7 +183,7 @@ def make_handler(app):
                 self.logout(now)
 
         def login(self, form, now):
-            if not app.limiter.allow(self.client_address[0], now):
+            if not app.limiter.allow(self.client_ip(), now):
                 self.send(429, "too many attempts", "text/plain", (("Retry-After", "60"),))
                 return
             if not app.hash_slots.acquire(blocking=False):

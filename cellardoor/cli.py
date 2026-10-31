@@ -124,7 +124,8 @@ def cmd_serve(args, out):
     store.connect(db).close()
     host, _, port = args.listen.rpartition(":")
     app = server.App(db, load_pepper(pepper), args.origin.rstrip("/"),
-                     secure_cookies=not args.insecure_cookies)
+                     secure_cookies=not args.insecure_cookies,
+                     trusted_proxies=args.trusted_proxy)
     httpd = server.serve(app, host or "127.0.0.1", int(port))
     out(f"listening on {args.listen}, origin {app.origin}")
     try:
@@ -183,6 +184,8 @@ def build_parser():
     srv.add_argument("--listen", default="127.0.0.1:8480")
     srv.add_argument("--origin", required=True,
                      help="public origin of this server, e.g. https://auth.example.com")
+    srv.add_argument("--trusted-proxy", action="append", default=[], metavar="IP",
+                     help="peer address of a reverse proxy whose X-Real-IP is trusted (repeatable)")
     srv.add_argument("--insecure-cookies", action="store_true",
                      help="omit the Secure cookie flag (local http testing only)")
     return p

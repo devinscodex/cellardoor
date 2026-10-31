@@ -224,3 +224,39 @@ def test_idle_connection_is_dropped_after_timeout(env, monkeypatch):
     s.close()
     httpd.shutdown()
     httpd.server_close()
+
+
+def test_limiter_window_resets():
+    lim = server.Limiter(2, 60)
+    assert lim.allow("a", 100) and lim.allow("a", 101)
+    assert not lim.allow("a", 102)
+    assert lim.allow("a", 161)
+
+
+def test_limiter_drops_idle_keys():
+    lim = server.Limiter(5, 60)
+    for i in range(server.Limiter.SWEEP_AT + 10):
+        lim.allow(f"k{i}", 100)
+    lim.allow("new", 1000)
+    assert len(lim.hits) < 5
+
+
+def test_proxy_header_ignored_unless_peer_is_trusted(env):
+    env["app"].limiter = server.Limiter(2, 60)
+    for _ in range(2):
+        login(env, headers={"X-Real-IP": "198.51.100.7"})
+    r, _ = login(env, headers={"X-Real-IP": "198.51.100.8"})
+    assert r.status == 429
+
+
+def test_trusted_proxy_gives_each_client_its_own_bucket(env):
+    env["app"].trusted_proxies = frozenset({"127.0.0.1"})
+    env["app"].limiter = server.Limiter(2, 60)
+    for _ in range(2):
+        login(env, headers={"X-Real-IP": "198.51.100.7"})
+    r, _ = login(env, headers={"X-Real-IP": "198.51.100.7"})
+    assert r.status == 429
+    r, _ = login(env, headers={"X-Real-IP": "198.51.100.8"})
+    assert r.status == 303
+    r, _ = login(env, headers={"X-Real-IP": "not-an-ip"})
+    assert r.status == 303
