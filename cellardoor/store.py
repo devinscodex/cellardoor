@@ -168,29 +168,43 @@ def add_entra_identity(conn, user_id, tid, oid):
         raise StoreError("identity_exists") from None
 
 
-def login_local(conn, username, password, peppers, now):
+def _charge_attempt(conn, ident_id, now):
+    """Count one guess before it is verified. False if the identity is locked.
+
+    One UPDATE decides the lock, so concurrent guesses cannot be undercounted.
+    The commit ends the write transaction before the slow password hash runs.
+    """
+    cur = conn.execute(
+        "UPDATE identities SET"
+        " locked_until = CASE WHEN failed + 1 >= ? THEN ? ELSE 0 END,"
+        " failed = CASE WHEN failed + 1 >= ? THEN 0 ELSE failed + 1 END"
+        " WHERE id = ? AND locked_until <= ?",
+        (MAX_FAILURES, now + LOCK_SECONDS, MAX_FAILURES, ident_id, now))
+    conn.commit()
+    return cur.rowcount == 1
+
+
+def login_local(conn, username, password, peppers, now, ip=""):
     """Return the user row on success, else None. Failures are indistinguishable."""
+    where = f" from {ip}" if ip else ""
     ident = conn.execute("SELECT * FROM identities WHERE provider = 'local' AND key = ?",
                          (username.lower(),)).fetchone()
     if ident is None:
         verify_dummy()
         tag = hashlib.sha256(username.encode()).hexdigest()[:8]
-        audit(conn, "signin-fail", f"unknown:{tag}", "unknown", now)
+        audit(conn, "signin-fail", f"unknown:{tag}", "unknown" + where, now)
         return None
     user = _user(conn, ident["user_id"])
-    ok, rehash = verify_password(password, ident["password_hash"], peppers)
-    if ident["locked_until"] > now:
-        audit(conn, "signin-fail", user["username"], "locked", now)
+    if not _charge_attempt(conn, ident["id"], now):
+        verify_dummy()
+        audit(conn, "signin-fail", user["username"], "locked" + where, now)
         return None
+    ok, rehash = verify_password(password, ident["password_hash"], peppers)
     if not ok:
-        failed = ident["failed"] + 1
-        locked = now + LOCK_SECONDS if failed >= MAX_FAILURES else 0
-        conn.execute("UPDATE identities SET failed = ?, locked_until = ? WHERE id = ?",
-                     (0 if locked else failed, locked, ident["id"]))
-        audit(conn, "signin-fail", user["username"], "locked" if locked else "bad password", now)
+        audit(conn, "signin-fail", user["username"], "bad password" + where, now)
         return None
     if not _active(user, now):
-        audit(conn, "signin-fail", user["username"], "inactive", now)
+        audit(conn, "signin-fail", user["username"], "inactive" + where, now)
         return None
     conn.execute("UPDATE identities SET failed = 0, locked_until = 0 WHERE id = ?",
                  (ident["id"],))
@@ -198,8 +212,16 @@ def login_local(conn, username, password, peppers, now):
         version = max(peppers)
         conn.execute("UPDATE identities SET password_hash = ? WHERE id = ?",
                      (hash_password(password, peppers, version), ident["id"]))
-    audit(conn, "signin", user["username"], "local", now)
+    audit(conn, "signin", user["username"], "local" + where, now)
     return user
+
+
+def unlock(conn, user_id, now, actor):
+    """Clear the failure counter and any lock on a user's identities."""
+    user = _user(conn, user_id)
+    conn.execute("UPDATE identities SET failed = 0, locked_until = 0 WHERE user_id = ?",
+                 (user_id,))
+    audit(conn, "unlock", actor, user["username"], now)
 
 
 def login_entra(conn, identity, now):

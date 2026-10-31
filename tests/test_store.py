@@ -377,3 +377,84 @@ def test_concurrent_admin_removal_keeps_one_admin(tmp_path):
         t.join()
     check = store.connect(path)
     assert len(store._enabled_admins(check, NOW)) == 1
+
+
+def _wrong(conn, n, now=NOW):
+    for _ in range(n):
+        store.login_local(conn, "alice", "wrong password!!", PEPPERS, now)
+
+
+@pytest.fixture()
+def alice(conn):
+    with conn:
+        uid = store.create_user(conn, "alice", "user", NOW)
+        store.add_local_identity(conn, uid, "alice", PW, PEPPERS, "p1")
+    return uid
+
+
+def test_correct_password_works_on_last_allowed_attempt(conn, alice):
+    _wrong(conn, store.MAX_FAILURES - 1)
+    assert store.login_local(conn, "alice", PW, PEPPERS, NOW) is not None
+
+
+def test_locked_identity_never_verifies_a_password(conn, alice, monkeypatch):
+    _wrong(conn, store.MAX_FAILURES)
+    calls = []
+    real = store.verify_password
+    monkeypatch.setattr(store, "verify_password", lambda *a: calls.append(1) or real(*a))
+    assert store.login_local(conn, "alice", PW, PEPPERS, NOW) is None
+    assert calls == []
+
+
+def test_lock_lasts_exactly_lock_seconds(conn, alice):
+    _wrong(conn, store.MAX_FAILURES)
+    end = NOW + store.LOCK_SECONDS
+    assert store.login_local(conn, "alice", PW, PEPPERS, end - 1) is None
+    assert store.login_local(conn, "alice", PW, PEPPERS, end) is not None
+
+
+def test_concurrent_wrong_guesses_are_all_counted(tmp_path):
+    import threading
+    path = str(tmp_path / "guess.db")
+    c = store.connect(path)
+    with c:
+        uid = store.create_user(c, "alice", "user", NOW)
+        store.add_local_identity(c, uid, "alice", PW, PEPPERS, "p1")
+    c.close()
+    verifies = []
+    real = store.verify_password
+    store.verify_password = lambda *a: verifies.append(1) or real(*a)
+    gate = threading.Barrier(12)
+
+    def guess():
+        k = store.connect(path)
+        gate.wait()
+        with k:
+            store.login_local(k, "alice", "wrong password!!", PEPPERS, NOW)
+        k.close()
+
+    try:
+        ts = [threading.Thread(target=guess) for _ in range(12)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+    finally:
+        store.verify_password = real
+    row = store.connect(path).execute("SELECT failed, locked_until FROM identities").fetchone()
+    assert len(verifies) == store.MAX_FAILURES
+    assert (row["failed"], row["locked_until"]) == (0, NOW + store.LOCK_SECONDS)
+
+
+def test_unlock_clears_lock_and_audits(conn, alice):
+    _wrong(conn, store.MAX_FAILURES)
+    with conn:
+        store.unlock(conn, alice, NOW, "cli")
+    assert store.login_local(conn, "alice", PW, PEPPERS, NOW) is not None
+    assert conn.execute("SELECT 1 FROM audit WHERE event='unlock'").fetchone()
+
+
+def test_failure_audit_records_source_ip(conn, alice):
+    store.login_local(conn, "alice", "wrong password!!", PEPPERS, NOW, ip="203.0.113.9")
+    detail = conn.execute("SELECT detail FROM audit WHERE event='signin-fail'").fetchone()[0]
+    assert "203.0.113.9" in detail

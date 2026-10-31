@@ -198,7 +198,8 @@ def make_handler(app):
                 conn = store.connect(app.db_path)
                 with conn:
                     user = store.login_local(conn, form.get("username", "")[:64],
-                                             form.get("password", ""), app.peppers, now)
+                                             form.get("password", ""), app.peppers, now,
+                                             ip=self.client_ip())
                     token = store.create_session(conn, user["id"], now, app.ttl) if user else None
             finally:
                 app.hash_slots.release()

@@ -121,3 +121,19 @@ def test_db_mode_enforced_by_check(run):
     rc, text = run("check")
     assert rc == 1 and "readable by others" in text
     assert stat.S_IMODE(os.stat(os.path.join(run.dir, "cellardoor.db")).st_mode) == 0o666
+
+
+def test_unlock_clears_a_locked_identity(run):
+    import sqlite3
+    run("init")
+    run("user", "add", "devin", "--admin")
+    db = os.path.join(run.dir, "cellardoor.db")
+    c = sqlite3.connect(db)
+    c.execute("UPDATE identities SET failed = 0, locked_until = 9999999999")
+    c.commit()
+    c.close()
+    rc, text = run("user", "unlock", "devin")
+    assert rc == 0 and "ok" in text
+    c = sqlite3.connect(db)
+    assert c.execute("SELECT locked_until FROM identities").fetchone()[0] == 0
+    assert c.execute("SELECT count(*) FROM audit WHERE event='unlock'").fetchone()[0] == 1

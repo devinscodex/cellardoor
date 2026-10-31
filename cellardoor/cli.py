@@ -95,6 +95,8 @@ def cmd_user(args, out):
                 store.set_disabled(conn, user["id"], True, now, actor)
             elif args.action == "enable":
                 store.set_disabled(conn, user["id"], False, now, actor)
+            elif args.action == "unlock":
+                store.unlock(conn, user["id"], now, actor)
             elif args.action == "delete":
                 store.delete_user(conn, user["id"], now, actor)
             elif args.action == "role":
@@ -169,7 +171,7 @@ def build_parser():
     add.add_argument("--admin", action="store_true")
     add.add_argument("--role", choices=("user", "guest"), default="user")
     add.add_argument("--days", type=int, default=0)
-    for name in ("disable", "enable", "delete"):
+    for name in ("disable", "enable", "delete", "unlock"):
         usub.add_parser(name).add_argument("name")
     role = usub.add_parser("role")
     role.add_argument("name")
