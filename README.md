@@ -13,7 +13,8 @@ real traffic" are done. Deployment notes: [docs/DEPLOY.md](docs/DEPLOY.md). A re
 - Local accounts. Password, then HMAC with a secret pepper, then argon2id.
 - Sessions. Random 256-bit token, only its SHA-256 is stored. `__Host-` cookie when
   secure, HttpOnly, SameSite=Lax.
-- Routes: `GET /healthz`, `GET /login`, `POST /login`, `POST /logout`, `GET /me`.
+- Routes: `GET /healthz`, `GET`/`POST /login`, `POST /logout`, `GET /me`, `GET /auth` (for
+  a proxy `auth_request`), `GET`/`POST /invite`, `GET`/`POST /password`.
 - Roles (admin, user, guest), expiry dates, invites, a last-admin guard.
 - Lockout after 5 wrong passwords, per-IP rate limit, an audit log.
 - Entra ID token verifier, tested against signed fixtures. No route calls it yet.
@@ -22,9 +23,8 @@ real traffic" are done. Deployment notes: [docs/DEPLOY.md](docs/DEPLOY.md). A re
 
 ## Not built
 
-- Entra sign-in routes, invite page, password change or reset.
+- Entra sign-in routes, a password reset by email, an admin web page (CLI only).
 - An OIDC provider for other apps (`/authorize`, `/token`).
-- `GET /auth` for nginx `auth_request`.
 
 ## Design rules
 

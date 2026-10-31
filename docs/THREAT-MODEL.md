@@ -32,6 +32,9 @@
 | Account enumeration | Same response and same hash work for unknown users. Unknown names are stored only as a short hash. |
 | Terminal injection through the audit log | Control characters are replaced when written. |
 | Rate limiter shared by all users behind a proxy | The client address is read from `X-Real-IP` only when the connection comes from a configured `--trusted-proxy`. |
+| Header injection through a user name | Usernames are limited to letters, digits and `. _ @ + -`. `/auth` sends the name in `X-CD-User`. |
+| Stolen password changes | Changing a password needs the current password. The check counts toward the lockout. All sessions end. |
+| Gated files served from a cache | `auth_request` runs before the cache. Tested with a slice cache. |
 | Forged or confused Entra tokens | RS256 only. `kid`, issuer, audience, tenant, expiry, not-before and nonce are all checked. Wrong claim types fail closed. |
 
 ## Known gaps
@@ -41,7 +44,8 @@
 - The pepper is stored next to the database unless you set `--pepper-dir` or use
   systemd credentials. Keep it out of backups. `backup` never includes it.
 - No TLS in the server. Use a reverse proxy.
-- No Entra sign-in routes, no password change or reset.
+- No Entra sign-in routes, no password reset by email, no admin web page.
+- `/auth` is only as safe as the proxy: keep the app on loopback and let only the proxy call it.
 - Audit rows are kept until you run `audit --prune DAYS`.
 
 ## Out of scope

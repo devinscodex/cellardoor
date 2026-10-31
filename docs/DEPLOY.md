@@ -11,6 +11,23 @@ CellarDoor listens on a loopback address and expects a reverse proxy in front.
 5. Install `deploy/cellardoor.service` and `deploy/nginx.example.conf`, with your names.
 6. `cellardoor check` prints what `serve` checks. `serve` refuses to start if any line fails.
 
+## Gate a path (for example a music player)
+
+`deploy/nginx-gate.example.conf` shows `auth_request` against `GET /auth`. A valid session
+gets 204 and the file is served. Anything else gets 401 and a redirect to `/login?next=...`.
+
+Tested on nginx 1.28 with a slice cache in front of the file origin:
+- No cookie, cold or warm cache: 302, no file bytes. `Range` requests too.
+- Valid session: 200 or 206 with the right bytes, cache MISS then HIT.
+- After logout, disable or delete: 302 at once, even with the file cached.
+- `/auth-check` is `internal`, so it answers 404 from outside.
+
+The login pages and the files must share one host. The cookie is host-only.
+
+Invite someone: `cellardoor invite --role user`, then give them the code and the `/invite`
+page. They choose a username and password. `cellardoor user passwd NAME` sets a password
+from the shell.
+
 ## Backup
 
 `cellardoor backup /path/new-file.db` writes a consistent copy with mode 600. It never

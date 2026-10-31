@@ -31,6 +31,10 @@ deployment with real users.
   Secure `__Host-` cookie, HSTS, 413 over 8 KB, 403 for a wrong `Origin`, 404 for other
   paths, nginx `limit_req` answers 429, and a spoofed `X-Real-IP` is overwritten.
 
+- `GET /auth` for nginx `auth_request`, tested with a slice cache in front of a file origin.
+- Invite page (`/invite`), password change (`/password`), `user passwd NAME`.
+- Usernames are validated. Session `last_seen` is written at most once a minute.
+
 ## Before real traffic
 
 1. Test `MemoryDenyWriteExecute=yes` in the unit with argon2. Keep it only if it loads.
@@ -54,8 +58,10 @@ deployment with real users.
 
 ## Later
 
+- Admin web page: people, invites, roles, guest expiry, unlock, audit. Server-rendered,
+  admin-only, every action a POST with the same `Origin` check.
+- "Keep me signed in" for 30 days. Needs a decision first.
 - Entra sign-in: `/login/entra` and `/callback` with `urllib`, state, nonce, PKCE.
   Needs a test app registration.
-- `GET /auth` for nginx `auth_request`: 204 with `X-CD-User` and `X-CD-Role`, or 401.
-- Invite page and password change.
+- Password reset without shell access.
 - OIDC provider (`/authorize`, `/token`) only if an app on another origin needs it.
