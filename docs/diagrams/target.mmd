@@ -1,0 +1,35 @@
+flowchart TB
+  classDef now fill:#dafbe1,stroke:#1a7f37,color:#1c2128
+  classDef later fill:#ffffff,stroke:#8a3fd9,stroke-dasharray:5 5,color:#6b2fb0
+  classDef secret fill:#fff8c5,stroke:#9a6700,color:#1c2128
+  classDef ext fill:#eef2f7,stroke:#6e7781,color:#1c2128
+
+  subgraph EDGE["Edge host"]
+    NG["nginx<br/>TLS, HSTS, limit_req,<br/>8k body, X-Real-IP overwrite"]
+  end
+  subgraph HOST["App host"]
+    SV["CellarDoor server<br/>timeout 10s, 4 hashes at once,<br/>trusted-proxy flag, SIGTERM drain"]
+    ST[("state dir 0700<br/>cellardoor.db")]
+    BK["cellardoor backup<br/>sqlite backup API, mode 600"]
+    CR[/"credential: pepper.p1, pepper.p2<br/>LoadCredential, outside state dir"/]
+  end
+  OFF[/"Offline store<br/>pepper copy, encrypted backups"/]
+  subgraph CONS["Consumers"]
+    MP["First consumer app"]
+    JB["Second consumer app"]
+  end
+  ENT["Entra ID"]
+
+  NG -->|loopback + auth_request| SV
+  SV --> ST
+  CR -->|read at start| SV
+  ST --> BK
+  BK -->|encrypted copy| OFF
+  CR -.->|never in backup set| OFF
+  NG -->|204 + X-CD headers| MP
+  NG -.->|later| JB
+  SV -.->|later: code + PKCE| ENT
+
+  class NG,SV,ST,BK,CR,MP now
+  class JB,ENT later
+  class OFF secret

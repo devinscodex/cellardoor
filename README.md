@@ -1,36 +1,38 @@
 # CellarDoor
 
-An open authentication framework: one small, self-hostable way to sign people in,
-whoever they are and whatever they are signing in to.
+A small login server you host yourself. It keeps users in SQLite and signs them in
+with a password. Microsoft Entra sign-in is built as a token verifier but is not
+connected to a route yet.
 
-Status: design phase. Nothing is built yet.
+Status: pre-release (0.0.x). Local sign-in works and is tested. Do not use it for
+real users until the items in [docs/ROADMAP.md](docs/ROADMAP.md) marked "before
+real traffic" are done. A reverse proxy is required: the server has no TLS.
 
-## Goals
+## What works today
 
-- **One identity record** whatever the sign-in method: stable id (issuer + subject),
-  email, role, groups, guest flag.
-- **Sign-in methods.** OpenID Connect (Microsoft Entra first, any OIDC issuer works),
-  local accounts, and identity from a trusted reverse proxy.
-- **Guests.** An admin invites an email address. The guest signs in with their own
-  identity provider or sets a local password. Guests get a restricted default role
-  and an expiry date.
-- **Roles and per-user limits** kept in one store that apps read.
-- **Audit log** of sign-ins, invites, role changes and disables.
-- **Admin.** An admin API and CLI first, then one small server-rendered admin page
-  (people, invites, guests, roles, per-app limits, audit log). Apps may use it or
-  call the API from their own pages. No end-user UI.
-- **Open and portable.** Standard protocols only (OAuth 2.0 Security BCP, OpenID
-  Connect, PKCE). Python standard library plus a vetted JWT library. No UI of its
-  own for end users.
+- Local accounts. Password, then HMAC with a secret pepper, then argon2id.
+- Sessions. Random 256-bit token, only its SHA-256 is stored. `__Host-` cookie when
+  secure, HttpOnly, SameSite=Lax.
+- Routes: `GET /healthz`, `GET /login`, `POST /login`, `POST /logout`, `GET /me`.
+- Roles (admin, user, guest), expiry dates, invites, a last-admin guard.
+- Lockout after 5 wrong passwords, per-IP rate limit, an audit log.
+- Entra ID token verifier, tested against signed fixtures. No route calls it yet.
+- CLI: `init`, `user`, `invite`, `audit`, `check`, `serve`.
 
-## Targets
+## Not built
 
-Linux and Windows servers, web applications, and Apple platforms (macOS, iOS) as
-OIDC clients. First consumers: Dialos and the Bethel church website.
+- Entra sign-in routes, invite page, password change or reset.
+- An OIDC provider for other apps (`/authorize`, `/token`).
+- `GET /auth` for nginx `auth_request`.
 
-## Not goals
+## Design rules
 
-A hosted identity service, a full identity server, custom cryptography, or PHP.
+- Security rests on secrets only: the pepper and the keys. The design is public.
+- Standard library first. Runtime dependencies: PyJWT, cryptography, argon2-cffi.
+- No custom cryptography. No PHP.
+
+See [docs/DESIGN.md](docs/DESIGN.md), [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md)
+and [SECURITY.md](SECURITY.md).
 
 ## License
 

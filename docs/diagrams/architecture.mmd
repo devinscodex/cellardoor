@@ -1,30 +1,26 @@
 flowchart TB
-  subgraph Apps
-    DIA[Dialos webchat]
-    BET[Bethel site and planner]
-    OTH[Other apps]
-  end
-  subgraph Clients
-    PYC[Python client]
-    TSC[TypeScript client, jose]
-  end
-  subgraph CellarDoor
-    SRV[Reference server, Python]
-    ADM[Admin API, CLI, admin page]
-    DB[(SQLite, one file per deployment)]
-  end
-  subgraph Identity providers
-    ENT[Microsoft Entra ID, OIDC]
-    LOC[Local accounts, argon2id plus pepper]
-    PRX[Trusted reverse proxy]
-  end
-  DIA --> PYC
-  BET --> TSC
-  OTH --> TSC
-  PYC -- verify session --> SRV
-  TSC -- verify session --> SRV
-  SRV --> DB
-  ADM --> SRV
-  SRV -- auth code, PKCE --> ENT
-  SRV --> LOC
-  SRV --> PRX
+  classDef live fill:#dafbe1,stroke:#1a7f37,color:#1c2128
+  classDef planned fill:#ffffff,stroke:#8a3fd9,stroke-dasharray:5 5,color:#6b2fb0
+  classDef notwired fill:#fff1f0,stroke:#cf222e,stroke-dasharray:5 5,color:#a40e26
+  classDef secret fill:#fff8c5,stroke:#9a6700,color:#1c2128
+  classDef ext fill:#eef2f7,stroke:#6e7781,color:#1c2128
+
+  U([User browser]) -->|HTTPS| PX["nginx, required<br/>TLS, timeouts, real IP"]
+  PX -->|loopback| SRV["server.py<br/>login, logout, me, healthz"]
+  ADM([Admin shell]) --> CLI["cli.py<br/>users, invites, audit"]
+  SRV --> STORE["store.py + crypto.py<br/>users, sessions, lockout<br/>HMAC pepper, argon2id"]
+  CLI --> STORE
+  STORE --> DB[("cellardoor.db 0600")]
+  STORE -.->|reads at start| PEP[/"pepper file 0600"/]
+  PLN["PLANNED routes<br/>/login/entra, /callback<br/>/invite, /auth"]
+  PLN -.-> VER["verify.py<br/>Entra token check<br/>tested, not called"]
+  VER -.-> STORE
+  PLN -.-> ENT["Microsoft Entra ID"]
+  PX -.->|auth_request| PLN
+  PX -.->|only if 204| APP["Consumer app"]
+
+  class SRV,CLI,STORE,DB live
+  class PEP secret
+  class VER notwired
+  class PLN,APP planned
+  class ENT,PX ext
