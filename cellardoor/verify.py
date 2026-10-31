@@ -68,13 +68,20 @@ def verify_id_token(token, jwks, audience, allowed_tenants, nonce, now=None):
         _fail("signature")
     except jwt.PyJWTError:
         _fail("malformed")
+    for name in ("exp", "iat", "nbf"):
+        value = claims.get(name, 0)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            _fail("malformed")
+    roles = claims.get("roles", ())
+    if not isinstance(roles, (list, tuple)) or not all(isinstance(r, str) for r in roles):
+        _fail("claims")
     if now > claims["exp"] + LEEWAY_SECONDS:
         _fail("expired")
     nbf = claims.get("nbf", claims["iat"])
     if now < nbf - LEEWAY_SECONDS:
         _fail("not_yet_valid")
     tid, oid = claims.get("tid"), claims.get("oid")
-    if not tid or not oid:
+    if not isinstance(tid, str) or not isinstance(oid, str) or not tid or not oid:
         _fail("claims")
     if claims.get("ver") != "2.0":
         _fail("claims")
