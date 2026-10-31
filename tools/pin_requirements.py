@@ -11,7 +11,7 @@ import urllib.request
 
 def hashes(name, version):
     url = f"https://pypi.org/pypi/{name}/{version}/json"
-    with urllib.request.urlopen(url, timeout=30) as r:  # noqa: S310 fixed https host
+    with urllib.request.urlopen(url, timeout=30) as r:
         files = json.load(r)["urls"]
     return sorted({f["digests"]["sha256"] for f in files})
 
