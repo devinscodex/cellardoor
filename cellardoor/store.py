@@ -10,6 +10,7 @@ import time
 
 from .crypto import (
     check_password_policy,
+    current_version,
     hash_password,
     hash_token,
     new_token,
@@ -209,7 +210,7 @@ def login_local(conn, username, password, peppers, now, ip=""):
     conn.execute("UPDATE identities SET failed = 0, locked_until = 0 WHERE id = ?",
                  (ident["id"],))
     if rehash:
-        version = max(peppers)
+        version = current_version(peppers)
         conn.execute("UPDATE identities SET password_hash = ? WHERE id = ?",
                      (hash_password(password, peppers, version), ident["id"]))
     audit(conn, "signin", user["username"], "local" + where, now)

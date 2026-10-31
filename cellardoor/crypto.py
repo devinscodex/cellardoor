@@ -1,6 +1,7 @@
 """Password hashing (argon2id after a pepper HMAC) and random token helpers."""
 import hashlib
 import hmac
+import re
 import secrets
 
 from argon2 import PasswordHasher
@@ -33,6 +34,17 @@ def hash_token(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def _version_number(version):
+    if not (isinstance(version, str) and re.fullmatch(r"p[0-9]{1,6}", version)):
+        raise CryptoError("pepper_version")
+    return int(version[1:])
+
+
+def current_version(peppers):
+    """Newest pepper version. Versions look like p1, p2, p10 and sort by number."""
+    return max(peppers, key=_version_number)
+
+
 def _prehash(password, pepper):
     if len(pepper) < MIN_PEPPER_BYTES:
         raise CryptoError("pepper_short")
@@ -56,7 +68,7 @@ def verify_password(password, stored, peppers):
         _ph.verify(encoded, _prehash(password, pepper))
     except (VerifyMismatchError, InvalidHashError):
         return False, False
-    return True, _ph.check_needs_rehash(encoded)
+    return True, _ph.check_needs_rehash(encoded) or version != current_version(peppers)
 
 
 def verify_dummy():

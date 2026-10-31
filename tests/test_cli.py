@@ -24,9 +24,9 @@ def run(tmp_path, monkeypatch):
 
 def test_init_creates_private_files_and_is_repeatable(run):
     assert run("init")[0] == 0
-    for name in ("cellardoor.db", "pepper"):
+    for name in ("cellardoor.db", "pepper.p1"):
         assert os.stat(os.path.join(run.dir, name)).st_mode & 0o777 == 0o600
-    pepper = os.path.join(run.dir, "pepper")
+    pepper = os.path.join(run.dir, "pepper.p1")
     with open(pepper, "rb") as f:
         before = f.read()
     assert run("init")[0] == 0
@@ -82,16 +82,16 @@ def test_unknown_user_and_bad_role(run):
 
 def test_permissive_pepper_refused(run):
     run("init")
-    os.chmod(os.path.join(run.dir, "pepper"), 0o644)
+    os.chmod(os.path.join(run.dir, "pepper.p1"), 0o644)
     rc, text = run("user", "add", "x")
     assert rc == 1 and "readable by others" in text
 
 
 def test_missing_pepper_refused(run):
     run("init")
-    os.remove(os.path.join(run.dir, "pepper"))
+    os.remove(os.path.join(run.dir, "pepper.p1"))
     rc, text = run("user", "add", "x")
-    assert rc == 1 and "pepper file missing" in text
+    assert rc == 1 and "no pepper file" in text
 
 
 def test_password_mismatch_and_policy(run, monkeypatch):
@@ -137,3 +137,94 @@ def test_unlock_clears_a_locked_identity(run):
     c = sqlite3.connect(db)
     assert c.execute("SELECT locked_until FROM identities").fetchone()[0] == 0
     assert c.execute("SELECT count(*) FROM audit WHERE event='unlock'").fetchone()[0] == 1
+
+
+def serve_args(run, *extra):
+    return ["serve", "--listen", "127.0.0.1:0", "--origin", "https://auth.example.com", *extra]
+
+
+def test_serve_refuses_with_no_admin(run):
+    run("init")
+    rc, text = run(*serve_args(run))
+    assert rc == 1 and "refusing to start" in text and "active admins: 0" in text
+
+
+@pytest.mark.parametrize("mode_target,mode", [("pepper.p1", 0o640), ("cellardoor.db", 0o644)])
+def test_serve_refuses_loose_file_modes(run, mode_target, mode):
+    run("init")
+    run("user", "add", "a", "--admin")
+    os.chmod(os.path.join(run.dir, mode_target), mode)
+    rc, text = run(*serve_args(run))
+    assert rc == 1 and "refusing to start" in text and "readable by others" in text
+
+
+def test_serve_refuses_loose_data_directory(run):
+    run("init")
+    run("user", "add", "a", "--admin")
+    os.chmod(run.dir, 0o755)
+    rc, text = run(*serve_args(run))
+    assert rc == 1 and "data directory readable by others" in text
+
+
+def test_serve_refuses_weak_pepper(run):
+    run("init")
+    run("user", "add", "a", "--admin")
+    path = os.path.join(run.dir, "pepper.p1")
+    with open(path, "wb") as f:
+        f.write(b"A" * 32)
+    rc, text = run(*serve_args(run))
+    assert rc == 1 and "non-random" in text
+
+
+def test_serve_refuses_http_origin_and_public_bind(run):
+    run("init")
+    run("user", "add", "a", "--admin")
+    rc, text = run("serve", "--listen", "127.0.0.1:0", "--origin", "http://auth.example.com")
+    assert rc == 1 and "https://" in text
+    rc, text = run("serve", "--listen", "0.0.0.0:0", "--origin", "https://auth.example.com")
+    assert rc == 1 and "not loopback" in text
+    rc, text = run("serve", "--listen", "0.0.0.0:0", "--origin", "http://x.example.com",
+                   "--insecure-cookies", "--allow-public-bind")
+    assert rc == 1 and "loopback" in text
+
+
+def test_pepper_in_separate_directory(run, tmp_path):
+    sep = str(tmp_path / "creds")
+    assert run("--pepper-dir", sep, "init")[0] == 0
+    assert not os.path.exists(os.path.join(run.dir, "pepper.p1"))
+    assert os.stat(os.path.join(sep, "pepper.p1")).st_mode & 0o777 == 0o600
+    assert run("--pepper-dir", sep, "user", "add", "a", "--admin")[0] == 0
+    assert run("--pepper-dir", sep, "check")[0] == 0
+
+
+def test_pepper_dir_from_systemd_credentials(run, tmp_path, monkeypatch):
+    sep = tmp_path / "creds"
+    run("--pepper-dir", str(sep), "init")
+    run("--pepper-dir", str(sep), "user", "add", "a", "--admin")
+    os.chmod(sep / "pepper.p1", 0o400)
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(sep))
+    assert run("check")[0] == 0
+
+
+def test_legacy_pepper_file_counts_as_p1(run):
+    run("init")
+    os.rename(os.path.join(run.dir, "pepper.p1"), os.path.join(run.dir, "pepper"))
+    run("user", "add", "a", "--admin")
+    assert "p1" in run("pepper", "status")[1]
+
+
+def test_pepper_rotation_moves_users_at_next_signin(run, tmp_path):
+    from cellardoor import crypto, store
+    run("init")
+    run("user", "add", "a", "--admin")
+    assert "p1: 1 identities" in run("pepper", "status")[1]
+    rc, text = run("pepper", "rotate")
+    assert rc == 0 and "pepper.p2" in text
+    assert "current pepper: p2" in run("pepper", "status")[1]
+    peppers = cli.load_peppers(run.dir)
+    conn = store.connect(cli.db_path(run.dir))
+    with conn:
+        assert store.login_local(conn, "a", PW, peppers, 1_800_000_000) is not None
+    status = run("pepper", "status")[1]
+    assert "p2: 1 identities" in status and "p1: 0 identities" in status
+    assert crypto.current_version({"p9": b"x", "p10": b"y", "p2": b"z"}) == "p10"
