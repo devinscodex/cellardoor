@@ -50,7 +50,22 @@ def test_wrong_typed_claims_raise_tokenerror(field, value):
         run(case)
 
 
-KAT = json.loads((Path(__file__).parent.parent / "fixtures" / "known-answer.json").read_text())
+def _build_kat():
+    """Sign a token with the openssl command line at test time. Nothing is stored."""
+    import tempfile
+
+    from tools import make_known_answer
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "kat.json"
+            make_known_answer.main(str(out))
+            return json.loads(out.read_text())
+    except FileNotFoundError:
+        return None
+
+
+KAT = _build_kat()
+needs_openssl = pytest.mark.skipif(KAT is None, reason="openssl command not found")
 
 
 def _kat(token=None, **over):
@@ -60,11 +75,13 @@ def _kat(token=None, **over):
     return verify_id_token(token or KAT["token"], KAT["jwks"], **args)
 
 
+@needs_openssl
 def test_known_answer_token_signed_by_openssl_verifies():
     ident = _kat()
     assert ident.key == KAT["expect"]["key"] and list(ident.roles) == KAT["expect"]["roles"]
 
 
+@needs_openssl
 def test_known_answer_token_fails_when_anything_changes():
     head, body, sig = KAT["token"].split(".")
     flipped = sig[:-4] + ("AAAA" if not sig.endswith("AAAA") else "BBBB")
@@ -78,6 +95,7 @@ def test_known_answer_token_fails_when_anything_changes():
         assert exc.value.code == code
 
 
+@needs_openssl
 def test_time_leeway_is_exactly_sixty_seconds():
     exp = KAT["now"] + 3600
     assert _kat(now=exp + 60).key

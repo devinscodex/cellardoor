@@ -1,6 +1,7 @@
-"""Write fixtures/known-answer.json: one RS256 ID token signed with the openssl command line,
-not with PyJWT, so the verifier is checked against a signature made by other code.
-The private key lives in a temporary directory and is deleted. Only the public key is kept.
+"""Write a JSON file holding one RS256 ID token signed with the openssl command line, not with
+PyJWT, so the verifier is checked against a signature made by other code. The tests call this
+at run time. The output is not committed: public scanners treat any such token as a secret.
+The private key lives in a temporary directory and is deleted.
 """
 import base64
 import json
@@ -44,4 +45,4 @@ def main(out):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "fixtures/known-answer.json")
+    main(sys.argv[1] if len(sys.argv) > 1 else "known-answer.json")
