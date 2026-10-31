@@ -349,3 +349,31 @@ def test_audit_text_has_no_control_characters(conn):
     store.audit(conn, "x", "a\x1b[31mb", "c\nd", NOW)
     actor, detail = conn.execute("SELECT actor, detail FROM audit ORDER BY id DESC").fetchone()
     assert "\x1b" not in actor and "\n" not in detail
+
+
+def test_concurrent_admin_removal_keeps_one_admin(tmp_path):
+    import threading
+    path = str(tmp_path / "race.db")
+    setup = store.connect(path)
+    with setup:
+        ids = [store.create_user(setup, n, "admin", NOW) for n in ("a1", "a2")]
+    setup.close()
+    gate = threading.Barrier(2)
+
+    def remove(uid):
+        c = store.connect(path)
+        gate.wait()
+        try:
+            with c:
+                store.set_disabled(c, uid, True, NOW, "t")
+        except store.StoreError:
+            pass
+        c.close()
+
+    threads = [threading.Thread(target=remove, args=(u,)) for u in ids]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    check = store.connect(path)
+    assert len(store._enabled_admins(check, NOW)) == 1

@@ -124,6 +124,12 @@ def _enabled_admins(conn, now):
     return [r for r in rows if _active(r, now)]
 
 
+def _write_lock(conn):
+    """Take the write lock before a read-then-write check, so two writers cannot both pass it."""
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+
+
 def _user(conn, user_id):
     row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     if row is None:
@@ -239,6 +245,7 @@ def revoke_user_sessions(conn, user_id):
 
 
 def set_disabled(conn, user_id, disabled, now, actor):
+    _write_lock(conn)
     user = _user(conn, user_id)
     if disabled and user["role"] == "admin" and _active(user, now) \
             and len(_enabled_admins(conn, now)) <= 1:
@@ -252,6 +259,7 @@ def set_disabled(conn, user_id, disabled, now, actor):
 def set_role(conn, user_id, role, now, actor):
     if role not in ROLES:
         raise StoreError("bad_role")
+    _write_lock(conn)
     user = _user(conn, user_id)
     if user["role"] == "admin" and role != "admin" and _active(user, now) \
             and len(_enabled_admins(conn, now)) <= 1:
@@ -261,6 +269,7 @@ def set_role(conn, user_id, role, now, actor):
 
 
 def delete_user(conn, user_id, now, actor):
+    _write_lock(conn)
     user = _user(conn, user_id)
     if user["role"] == "admin" and _active(user, now) and len(_enabled_admins(conn, now)) <= 1:
         raise StoreError("last_admin")
