@@ -5,6 +5,7 @@ POST requests must carry an Origin header equal to the configured origin.
 """
 import html
 import json
+import threading
 import time
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -15,6 +16,8 @@ from . import store
 MAX_BODY = 4096
 LOGIN_ATTEMPTS = 20
 LOGIN_WINDOW = 60
+SOCKET_TIMEOUT = 10
+HASH_SLOTS = 4
 SECURITY_HEADERS = (
     ("Content-Security-Policy",
      "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"),
@@ -64,11 +67,13 @@ class App:
         self.secure, self.ttl, self.idle, self.clock = secure_cookies, session_ttl, idle, clock
         self.cookie_name = "__Host-cd_session" if secure_cookies else "cd_session"
         self.limiter = Limiter(LOGIN_ATTEMPTS, LOGIN_WINDOW)
+        self.hash_slots = threading.BoundedSemaphore(HASH_SLOTS)
 
 
 def make_handler(app):
     class Handler(BaseHTTPRequestHandler):
         server_version = "cellardoor"
+        timeout = SOCKET_TIMEOUT
         sys_version = ""
 
         def log_message(self, fmt, *args):
@@ -164,11 +169,17 @@ def make_handler(app):
             if not app.limiter.allow(self.client_address[0], now):
                 self.send(429, "too many attempts", "text/plain", (("Retry-After", "60"),))
                 return
-            conn = store.connect(app.db_path)
-            with conn:
-                user = store.login_local(conn, form.get("username", "")[:64],
-                                         form.get("password", ""), app.peppers, now)
-                token = store.create_session(conn, user["id"], now, app.ttl) if user else None
+            if not app.hash_slots.acquire(blocking=False):
+                self.send(503, "busy", "text/plain", (("Retry-After", "5"),))
+                return
+            try:
+                conn = store.connect(app.db_path)
+                with conn:
+                    user = store.login_local(conn, form.get("username", "")[:64],
+                                             form.get("password", ""), app.peppers, now)
+                    token = store.create_session(conn, user["id"], now, app.ttl) if user else None
+            finally:
+                app.hash_slots.release()
             nxt = safe_next(form.get("next", "/me"))
             if token is None:
                 msg = "<p>Sign-in failed.</p>"

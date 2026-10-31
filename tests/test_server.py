@@ -199,3 +199,28 @@ def test_safe_next_random_never_escapes_site():
         out = server.safe_next(value)
         assert out.startswith("/") and not out.startswith("//")
         assert out.isprintable() and "\\" not in out and " " not in out
+
+
+def test_login_returns_503_when_hash_slots_are_full(env):
+    slots = env["app"].hash_slots
+    held = [slots.acquire() for _ in range(server.HASH_SLOTS)]
+    r, _ = login(env)
+    assert r.status == 503 and r.getheader("Retry-After") == "5"
+    for _ in held:
+        slots.release()
+    r, _ = login(env)
+    assert r.status == 303
+
+
+def test_idle_connection_is_dropped_after_timeout(env, monkeypatch):
+    import socket
+    monkeypatch.setattr(server, "SOCKET_TIMEOUT", 0.3)
+    httpd = server.serve(env["app"], "127.0.0.1", 0)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    s = socket.create_connection(("127.0.0.1", httpd.server_address[1]))
+    s.settimeout(3)
+    s.sendall(b"POST /login HTTP/1.1\r\nHost: x\r\n")
+    assert s.recv(1024) == b""
+    s.close()
+    httpd.shutdown()
+    httpd.server_close()
