@@ -25,12 +25,18 @@ deployment with real users.
 - Expired sessions are deleted. `audit --prune DAYS`.
 - Hash-pinned `requirements.txt`. Example systemd unit and nginx file. `docs/DEPLOY.md`.
 
+- Restore drill, run once: backup, restore into a scratch directory, `check`, clear
+  sessions, sign in. The restored copy held old sessions, so clearing them matters.
+- Run behind nginx 1.28 over TLS with the example configuration (self-signed certificate):
+  Secure `__Host-` cookie, HSTS, 413 over 8 KB, 403 for a wrong `Origin`, 404 for other
+  paths, nginx `limit_req` answers 429, and a spoofed `X-Real-IP` is overwritten.
+
 ## Before real traffic
 
-1. Restore drill: restore one backup into a scratch directory, run `check`, sign in.
-2. Run the service under the example unit on a real host, with the reverse proxy, and
-   try the login from a browser over HTTPS.
-3. Test `MemoryDenyWriteExecute=yes` in the unit with argon2. Keep it only if it loads.
+1. Test `MemoryDenyWriteExecute=yes` in the unit with argon2. Keep it only if it loads.
+2. Run once under the systemd unit with a real certificate and a browser.
+3. Decide who can reach the loopback port. Any local user can send `X-Real-IP` straight
+   to the app, because the app trusts its configured proxy address.
 
 ## Tests to add
 
