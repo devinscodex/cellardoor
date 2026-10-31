@@ -1,0 +1,44 @@
+# Example system unit. Replace example.com. Run as its own user:
+#   useradd --system --home /var/lib/cellardoor --shell /usr/sbin/nologin cellardoor
+# Keep pepper files outside the state directory and out of every backup of it:
+#   install -d -m 700 /etc/cellardoor
+#   cellardoor --dir /var/lib/cellardoor --pepper-dir /etc/cellardoor init
+[Unit]
+Description=CellarDoor login server
+After=network-online.target
+
+[Service]
+User=cellardoor
+ExecStart=/opt/cellardoor/.venv/bin/python -m cellardoor --dir /var/lib/cellardoor serve \
+  --listen 127.0.0.1:18480 --origin https://auth.example.com --trusted-proxy 127.0.0.1
+StateDirectory=cellardoor
+StateDirectoryMode=0700
+# One line per pepper version. The server reads them from $CREDENTIALS_DIRECTORY.
+LoadCredential=pepper.p1:/etc/cellardoor/pepper.p1
+UMask=0077
+Restart=on-failure
+TimeoutStopSec=15
+MemoryMax=512M
+TasksMax=64
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+# Test MemoryDenyWriteExecute=yes on your host. Drop it if argon2 fails to load.
+
+[Install]
+WantedBy=multi-user.target
