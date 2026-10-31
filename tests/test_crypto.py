@@ -62,3 +62,13 @@ def test_tokens_are_long_and_hash_is_stable():
     a, b = crypto.new_token(), crypto.new_token()
     assert a != b and len(a) >= 43
     assert crypto.hash_token(a) == crypto.hash_token(a) != crypto.hash_token(b)
+
+
+def test_password_of_max_plus_one_is_rejected_even_if_it_hashes_correctly():
+    peppers = {"p1": os.urandom(32)}
+    long_pw = "x" * (crypto.MAX_PASSWORD + 1)
+    stored = "p1$" + crypto._ph.hash(crypto._prehash(long_pw, peppers["p1"]))
+    assert crypto.verify_password(long_pw, stored, peppers) == (False, False)
+    ok_pw = "x" * crypto.MAX_PASSWORD
+    stored = "p1$" + crypto._ph.hash(crypto._prehash(ok_pw, peppers["p1"]))
+    assert crypto.verify_password(ok_pw, stored, peppers)[0] is True

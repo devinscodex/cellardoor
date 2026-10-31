@@ -76,3 +76,16 @@ def test_known_answer_token_fails_when_anything_changes():
         with pytest.raises(TokenError) as exc:
             _kat(**over)
         assert exc.value.code == code
+
+
+def test_time_leeway_is_exactly_sixty_seconds():
+    exp = KAT["now"] + 3600
+    assert _kat(now=exp + 60).key
+    with pytest.raises(TokenError) as e:
+        _kat(now=exp + 61)
+    assert e.value.code == "expired"
+    nbf = KAT["now"] - 60
+    assert _kat(now=nbf - 60).key
+    with pytest.raises(TokenError) as e:
+        _kat(now=nbf - 61)
+    assert e.value.code == "not_yet_valid"

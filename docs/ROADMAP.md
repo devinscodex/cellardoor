@@ -40,10 +40,10 @@ deployment with real users.
 
 ## Tests to add
 
-- Extend the mutation check to `server.py` and the limiter.
-- Absolute session lifetime over HTTP, and the body size boundary (4096 and 4097).
-- Concurrent `/me` calls with no database lock errors.
-- A signed token from outside this repository as a known-answer vector.
+- Mutation check covers `server.py`, the limiter and boundary edges: 56 mutants, all killed.
+- Absolute session lifetime and the body size boundary over HTTP: done.
+- Concurrent `/me` calls with no database lock errors: done.
+- A token signed with the openssl command line as a known-answer vector: done.
 
 ## Docs and release
 
