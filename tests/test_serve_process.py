@@ -1,4 +1,3 @@
-import os
 import socket
 import subprocess
 import sys
@@ -18,13 +17,14 @@ def free_port():
 
 def cli(directory, *argv, **kw):
     return subprocess.run([sys.executable, "-m", "cellardoor", "--dir", directory, *argv],
-                          cwd=ROOT, capture_output=True, text=True, **kw)
+                          cwd=ROOT, capture_output=True, text=True, check=False, **kw)
 
 
 def test_sigterm_stops_server_cleanly(tmp_path):
     d = str(tmp_path / "data")
     assert cli(d, "init").returncode == 0
-    from cellardoor import cli as clim, store
+    from cellardoor import cli as clim
+    from cellardoor import store
     peppers = clim.load_peppers(d)
     conn = store.connect(clim.db_path(d))
     with conn:

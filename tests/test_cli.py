@@ -242,8 +242,10 @@ def test_backup_is_private_complete_and_has_no_pepper(run, tmp_path):
     c = sqlite3.connect(dest)
     assert c.execute("SELECT username FROM users").fetchone()[0] == "devin"
     assert c.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-    pepper = open(os.path.join(run.dir, "pepper.p1"), "rb").read()
-    assert pepper not in open(dest, "rb").read()
+    with open(os.path.join(run.dir, "pepper.p1"), "rb") as f:
+        pepper = f.read()
+    with open(dest, "rb") as f:
+        assert pepper not in f.read()
 
 
 def test_backup_refuses_existing_target_and_pepper_directory(run, tmp_path):
