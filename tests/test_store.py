@@ -337,3 +337,15 @@ def test_deleting_user_removes_dependents(conn):
     store.delete_user(conn, uid, NOW, "t")
     for t in ("identities", "sessions", "settings"):
         assert conn.execute(f"SELECT count(*) FROM {t} WHERE user_id=?", (uid,)).fetchone()[0] == 0
+
+
+def test_unknown_username_is_hashed_in_audit(conn):
+    store.login_local(conn, "hunter2-my-password", "x" * 12, PEPPERS, NOW)
+    actor = conn.execute("SELECT actor FROM audit WHERE event='signin-fail'").fetchone()[0]
+    assert actor.startswith("unknown:") and "hunter2" not in actor
+
+
+def test_audit_text_has_no_control_characters(conn):
+    store.audit(conn, "x", "a\x1b[31mb", "c\nd", NOW)
+    actor, detail = conn.execute("SELECT actor, detail FROM audit ORDER BY id DESC").fetchone()
+    assert "\x1b" not in actor and "\n" not in detail

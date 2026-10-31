@@ -3,6 +3,7 @@
 Plain parameterized SQL. Raw tokens are returned once and only their SHA-256 hash is
 stored. Time is passed in (`now`, epoch seconds) so behaviour is testable.
 """
+import hashlib
 import os
 import sqlite3
 import time
@@ -102,8 +103,14 @@ def connect(path):
     return conn
 
 
+def _printable(text):
+    """Replace control characters so audit text cannot drive a terminal."""
+    return "".join(c if c.isprintable() else "?" for c in str(text))
+
+
 def audit(conn, event, actor, detail="", now=None):
     now = int(time.time() if now is None else now)
+    actor, detail = _printable(actor), _printable(detail)
     conn.execute("INSERT INTO audit (time, event, actor, detail) VALUES (?,?,?,?)",
                  (now, event, actor, detail))
 
@@ -161,7 +168,8 @@ def login_local(conn, username, password, peppers, now):
                          (username.lower(),)).fetchone()
     if ident is None:
         verify_dummy()
-        audit(conn, "signin-fail", username[:64], "unknown", now)
+        tag = hashlib.sha256(username.encode()).hexdigest()[:8]
+        audit(conn, "signin-fail", f"unknown:{tag}", "unknown", now)
         return None
     user = _user(conn, ident["user_id"])
     ok, rehash = verify_password(password, ident["password_hash"], peppers)
