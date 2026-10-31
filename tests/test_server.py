@@ -283,3 +283,90 @@ def test_too_many_form_fields_is_400(env):
     assert r.status == 400
     r, _ = login(env)
     assert r.status == 303
+
+
+def _body_of(n):
+    prefix = "username=alice&password="
+    return prefix + "a" * (n - len(prefix))
+
+
+def test_body_size_boundary(env):
+    r, _ = call(env, "POST", "/login", _body_of(server.MAX_BODY))
+    assert r.status != 413
+    r, _ = call(env, "POST", "/login", _body_of(server.MAX_BODY + 1))
+    assert r.status == 413
+
+
+def test_missing_length_and_wrong_type(env):
+    c = http.client.HTTPConnection("127.0.0.1", env["port"])
+    c.putrequest("POST", "/login")
+    c.putheader("Origin", env["app"].origin)
+    c.putheader("Content-Type", "application/x-www-form-urlencoded")
+    c.endheaders()
+    assert c.getresponse().status == 411
+    r, _ = call(env, "POST", "/login", "{}", headers={"Content-Type": "application/json"})
+    assert r.status == 415
+
+
+def test_absolute_session_lifetime_even_when_kept_active(env):
+    ck = cookie_of(login(env)[0])
+    for _ in range(28):
+        env["clock"].t += 1000
+        assert call(env, "GET", "/me", headers={"Cookie": ck})[0].status == 200
+    env["clock"].t += 1000
+    assert env["clock"].t - NOW == 29000 > env["app"].ttl
+    assert call(env, "GET", "/me", headers={"Cookie": ck})[0].status == 401
+
+
+def test_session_dies_exactly_at_ttl(env):
+    ck = cookie_of(login(env)[0])
+    for _ in range(28):
+        env["clock"].t += 1000
+        call(env, "GET", "/me", headers={"Cookie": ck})
+    env["clock"].t = NOW + env["app"].ttl - 1
+    assert call(env, "GET", "/me", headers={"Cookie": ck})[0].status == 200
+    env["clock"].t = NOW + env["app"].ttl
+    assert call(env, "GET", "/me", headers={"Cookie": ck})[0].status == 401
+
+
+def test_malformed_cookie_header_is_just_unauthenticated(env):
+    for raw in ("\x00junk", "cd_session", "=;=;", "cd_session=" + "A" * 5000):
+        r, _ = call(env, "GET", "/me", headers={"Cookie": raw})
+        assert r.status == 401
+
+
+def test_logout_revokes_the_session(env):
+    ck = cookie_of(login(env)[0])
+    r, _ = call(env, "POST", "/logout", "", headers={"Cookie": ck})
+    assert r.status == 303 and r.getheader("Location") == "/login"
+    assert call(env, "GET", "/me", headers={"Cookie": ck})[0].status == 401
+
+
+def test_first_value_wins_for_duplicate_fields(env):
+    body = "username=alice&username=bob&password=correct+horse+battery"
+    r, _ = call(env, "POST", "/login", body)
+    _, text = call(env, "GET", "/me", headers={"Cookie": cookie_of(r)})
+    assert '"alice"' in text
+
+
+def test_concurrent_me_calls_do_not_lock_the_database(env):
+    ck = cookie_of(login(env)[0])
+    codes = []
+
+    def hit():
+        codes.append(call(env, "GET", "/me", headers={"Cookie": ck})[0].status)
+
+    threads = [threading.Thread(target=hit) for _ in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert codes == [200] * 20
+
+
+def test_response_headers_are_exact(env):
+    for r, _ in (call(env, "GET", "/login"), call(env, "GET", "/me"), call(env, "GET", "/nope")):
+        assert r.getheader("X-Frame-Options") == "DENY"
+        assert r.getheader("Referrer-Policy") == "no-referrer"
+        assert r.getheader("X-Content-Type-Options") == "nosniff"
+        assert "python" not in (r.getheader("Server") or "").lower()
